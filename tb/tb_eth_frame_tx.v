@@ -177,41 +177,6 @@ eth_frame_tx u_mac_frame_tx(
     .mac_tx_axis_tready  	(mac_tx_axis_tready   )
 );
 
-generate 
-if(FRAME == 1)begin :GEN_FRAME_TX_TOP
- frame_tx_top u_frame_tx_top(
-     .src_mac_addr        	(src_mac_addr         ),
-     .dst_mac_addr        	(dst_mac_addr         ),
-     .src_ip_addr         	(src_ip_addr          ),
-     .dst_ip_addr         	(dst_ip_addr          ),
-     .udp_src_port        	(udp_src_port         ),
-     .udp_dst_port        	(udp_dst_port         ),
-     .mac_exist           	(mac_exist            ),
-     .arp_request_req     	(arp_request_req      ),
-     .arp_request_ack     	(arp_request_ack      ),
-     .arp_reply_req       	(arp_reply_req        ),
-     .arp_reply_ack       	(arp_reply_ack        ),
-     .tx_axis_aclk        	(tx_axis_aclk         ),
-     .tx_axis_areset      	(tx_axis_aresetn      ),
-     .icmp_not_empty      	(icmp_not_empty       ),
-     .icmp_tx_axis_tdata  	(icmp_tx_axis_tdata   ),
-     .icmp_tx_axis_tkeep  	(icmp_tx_axis_tkeep   ),
-     .icmp_tx_axis_tvalid 	(icmp_tx_axis_tvalid  ),
-     .icmp_tx_axis_tlast  	(icmp_tx_axis_tlast   ),
-     .icmp_tx_axis_tready 	(icmp_tx_axis_tready  ),
-     .udp_tx_axis_tdata   	(udp_tx_axis_tdata    ),
-     .udp_tx_axis_tkeep   	(udp_tx_axis_tkeep    ),
-     .udp_tx_axis_tvalid  	(udp_tx_axis_tvalid   ),
-     .udp_tx_axis_tlast   	(udp_tx_axis_tlast    ),
-     .udp_tx_axis_tready  	(udp_tx_axis_tready   ),
-     .mac_tx_axis_tdata   	(mac_tx_axis_tdata    ),
-     .mac_tx_axis_tkeep   	(mac_tx_axis_tkeep    ),
-     .mac_tx_axis_tvalid  	(mac_tx_axis_tvalid   ),
-     .mac_tx_axis_tlast   	(mac_tx_axis_tlast    ),
-     .mac_tx_axis_tready  	(mac_tx_axis_tready   )
- );
-end
-endgenerate
 
 always #(`CLOCK_PERIOD/2) tx_axis_aclk = ~tx_axis_aclk;
 

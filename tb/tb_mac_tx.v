@@ -171,30 +171,6 @@ us_mac_tx u_us_mac_frame_tx(
     .mac_tx_axis_tready   	(mac_tx_axis_tready    )
 );
 
-
-
-// frame_tx #(
-//     .StreamWidth 	(64  ))
-// u_frame_tx(
-//     .src_mac_addr         	(src_mac_addr          ),
-//     .dst_mac_addr         	(dst_mac_addr          ),
-//     .protocol_type        	(eth_type         ),
-//     .tx_axis_aclk         	(tx_axis_aclk          ),
-//     .tx_axis_areset       	(tx_axis_aresetn       ),
-//     .frame_tx_axis_tdata  	(frame_tx_axis_tdata   ),
-//     .frame_tx_axis_tkeep  	(frame_tx_axis_tkeep   ),
-//     .frame_tx_axis_tvalid 	(frame_tx_axis_tvalid  ),
-//     .frame_tx_axis_tlast  	(frame_tx_axis_tlast   ),
-//     .frame_tx_axis_tready 	(frame_tx_axis_tready  ),
-//     .mac_tx_axis_tdata    	(mac_tx_axis_tdata     ),
-//     .mac_tx_axis_tkeep    	(mac_tx_axis_tkeep     ),
-//     .mac_tx_axis_tvalid   	(mac_tx_axis_tvalid    ),
-//     .mac_tx_axis_tlast    	(mac_tx_axis_tlast     ),
-//     .mac_tx_axis_tready   	(mac_tx_axis_tready    ),
-//     .rcv_stream_end       	(recv_axis_end        )
-// );
-
-
 always #(`CLOCK_PERIOD / 2) tx_axis_aclk = ~tx_axis_aclk;
 
 endmodule

@@ -85,23 +85,6 @@ us_arp_tx tb_arp(
 );
 
 
-// arp_tx tb_arp(
-//     .tx_axis_aclk       	(tx_axis_aclk        ),
-//     .tx_axis_areset     	(tx_axis_aresetn     ),
-//     .arp_tx_axis_tdata  	(arp_tx_axis_tdata   ),
-//     .arp_tx_axis_tkeep  	(arp_tx_axis_tkeep   ),
-//     .arp_tx_axis_tvalid 	(arp_tx_axis_tvalid  ),
-//     .arp_tx_axis_tlast  	(arp_tx_axis_tlast   ),
-//     .arp_tx_axis_tready 	(arp_tx_axis_tready  ),
-//     .dst_mac_addr       	(dst_mac_addr        ),
-//     .src_mac_addr       	(src_mac_addr        ),
-//     .dst_ip_addr        	(dst_ip_addr         ),
-//     .src_ip_addr        	(src_ip_addr         ),
-//     .arp_reply_ack      	(arp_reply_ack       ),
-//     .arp_reply_req      	(arp_reply_req       ),
-//     .arp_request_ack    	(arp_request_ack     ),
-//     .arp_request_req    	(arp_request_req     )
-// );
 
 always #(`CLOCK_PERIOD/2) tx_axis_aclk = ~tx_axis_aclk;
 

@@ -280,29 +280,6 @@ us_mac_rx
 		.recv_type			    (rcvd_type)//received type, 0800: IP, 0806: ARP
 );
 
-// frame_rx 
-// 	#(
-// 		.StreamWidth(64)
-// 	)
-// 	mac_rx(	
-// 		.rx_axis_aclk           (rx_axis_aclk),
-// 		.rx_axis_areset         (rx_axis_aresetn),
-//         .mac_rx_axis_tdata      (mac_rx_axis_tdata),
-//         .mac_rx_axis_tkeep      (mac_rx_axis_tkeep),
-//         .mac_rx_axis_tvalid     (mac_rx_axis_tvalid),		 
-//         .mac_rx_axis_tlast      (mac_rx_axis_tlast),
-//         .mac_rx_axis_tusr       (mac_rx_axis_tusr),
-// 		.frame_rx_axis_tdata    (frame_rx_axis_tdata),
-//         .frame_rx_axis_tkeep    (frame_rx_axis_tkeep),
-//         .frame_rx_axis_tvalid   (frame_rx_axis_tvalid),  		 
-//         .frame_rx_axis_tlast    (frame_rx_axis_tlast),
-//         .frame_rx_axis_tusr     (frame_rx_axis_tusr),
-// 		.local_mac_addr         (local_mac_addr),	//local mac address, defined by user
-// 		.rcvd_dst_mac_addr      (rcvd_dst_mac_addr),	//received destination mac address
-// 	    .rcvd_src_mac_addr      (rcvd_src_mac_addr),	//received destination mac address
-// 		.rcvd_type			    (rcvd_type)//received type, 0800: IP, 0806: ARP
-// );
-
 
 
 always #(`CLOCK_PERIOD / 2) rx_axis_aclk = ~rx_axis_aclk;

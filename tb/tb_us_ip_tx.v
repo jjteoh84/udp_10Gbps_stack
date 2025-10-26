@@ -139,30 +139,6 @@ us_ip_tx u_us_ip_tx(
     .recv_stream_end      	(recv_stream_end       )
 );
 
-
-
-// ip_tx 
-// u_ip_tx(
-//     .ip_send_type         	(ip_send_type          ),
-//     .src_ip_addr          	(src_ip_addr           ),
-//     .dst_ip_addr          	(dst_ip_addr           ),
-//     .tx_axis_aclk         	(tx_axis_aclk          ),
-//     .tx_axis_areset       	(tx_axis_aresetn       ),
-//     .ip_tx_axis_tdata     	(ip_tx_axis_tdata      ),
-//     .ip_tx_axis_tkeep     	(ip_tx_axis_tkeep      ),
-//     .ip_tx_axis_tvalid    	(ip_tx_axis_tvalid     ),
-//     .ip_tx_axis_tlast     	(ip_tx_axis_tlast      ),
-//     .ip_tx_axis_tready    	(ip_tx_axis_tready     ),
-//     .frame_tx_axis_tdata  	(frame_tx_axis_tdata   ),
-//     .frame_tx_axis_tkeep  	(frame_tx_axis_tkeep   ),
-//     .frame_tx_axis_tvalid 	(frame_tx_axis_tvalid  ),
-//     .frame_tx_axis_tlast  	(frame_tx_axis_tlast   ),
-//     .frame_tx_axis_tready 	(frame_tx_axis_tready  ),
-//     .ip_not_empty         	(ip_not_empty          ),
-//     .rcv_stream_end       	(recv_stream_end        )
-// );
-
-
 always #(`CLOCK_PERIOD / 2) tx_axis_aclk = ~tx_axis_aclk;
 
 endmodule

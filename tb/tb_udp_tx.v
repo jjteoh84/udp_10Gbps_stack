@@ -63,27 +63,6 @@ us_udp_tx u_udp_tx(
    .udp_not_empty      	(udp_not_empty       )
 );
 
-//  udp_tx u_udp_tx(
-//      .src_ip_addr        	(SRC_IP_ADDR         ),
-//      .dst_ip_addr        	(DES_IP_ADDR         ),
-//      .udp_src_port       	(SRC_PORT            ),
-//      .udp_dst_port       	(DES_PORT            ),
-//      .tx_axis_aclk       	(tx_axis_aclk        ),
-//      .tx_axis_areset     	(tx_axis_areset      ),
-//      .udp_tx_axis_tdata  	(udp_tx_axis_tdata   ),
-//      .udp_tx_axis_tkeep  	(udp_tx_axis_tkeep   ),
-//      .udp_tx_axis_tvalid 	(udp_tx_axis_tvalid  ),
-//      .udp_tx_axis_tlast  	(udp_tx_axis_tlast   ),
-//      .udp_tx_axis_tready 	(udp_tx_axis_tready  ),
-//      .ip_tx_axis_tdata   	(ip_tx_axis_tdata    ),
-//      .ip_tx_axis_tkeep   	(ip_tx_axis_tkeep    ),
-//      .ip_tx_axis_tvalid  	(ip_tx_axis_tvalid   ),
-//      .ip_tx_axis_tlast   	(ip_tx_axis_tlast    ),
-//      .ip_tx_axis_tready  	(1'b1                ),
-//      .mac_exist          	(1'b1           ),
-//      .udp_not_empty      	(udp_not_empty       )
-//  );
-
 integer i = 0;
 
 initial begin

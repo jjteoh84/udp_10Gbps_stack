@@ -91,18 +91,7 @@
     .axis_tkeep       	(axis_tkeep        ),
     .packet_len_bytes 	(packet_len_bytes  )
  );
-/*
-  stream_counter u_axis_counter(
-    .axis_aclk        	(axis_aclk         ),
-    .axis_aresetn     	(axis_aresetn      ),
-    .axis_tvalid      	(axis_tvalid       ),
-    .axis_tready      	(axis_tready       ),
-    .axis_tdata       	(axis_tdata        ),
-    .axis_tlast       	(axis_tlast        ),
-    .axis_tkeep       	(axis_tkeep        ),
-    .packet_len_bytes 	(packet_len_bytes  )
- );
- */
+
  
  always #(`CLOCK_PERIOD/ 2)axis_aclk = ~axis_aclk;
 

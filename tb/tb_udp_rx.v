@@ -148,22 +148,7 @@ us_udp_rx #(
     .recv_src_ip_addr   	(SRC_IP_ADDR    )
 );
 
-// udp_rx u_us_udp_rx(
-//     .rx_axis_aclk       	(rx_axis_aclk        ),
-//     .rx_axis_areset    	(rx_axis_aresetn     ),
-//     .ip_rx_axis_tdata   	(ip_rx_axis_tdata    ),
-//     .ip_rx_axis_tkeep   	(ip_rx_axis_tkeep    ),
-//     .ip_rx_axis_tvalid  	(ip_rx_axis_tvalid   ),
-//     .ip_rx_axis_tlast   	(ip_rx_axis_tlast    ),
-//     .ip_rx_axis_tusr    	(ip_rx_axis_tusr     ),
-//     .udp_rx_axis_tdata  	(udp_rx_axis_tdata   ),
-//     .udp_rx_axis_tkeep  	(udp_rx_axis_tkeep   ),
-//     .udp_rx_axis_tvalid 	(udp_rx_axis_tvalid  ),
-//     .udp_rx_axis_tlast  	(udp_rx_axis_tlast   ),
-//     .udp_rx_axis_tusr   	(udp_rx_axis_tusr    ),
-//     .rcvd_dst_ip_addr   	(DES_IP_ADDR    ),
-//     .rcvd_src_ip_addr   	(SRC_IP_ADDR    )
-// );
+
 
 always #(`CLOCK_PERIOD / 2) rx_axis_aclk = ~rx_axis_aclk;
 
