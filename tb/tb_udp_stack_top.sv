@@ -183,12 +183,12 @@ initial begin
     Please help us improve the depth and quality of information on this wiki. You may provide us feedback by sending email to wiki-help @ xilinx.com.
  *******************************************************************************/
     #(`CLOCK_PERIOD * 20)
-    fd = $fopen("../../../../../../../python/udp-tx-data.bin", "rb");
+    fd = $fopen("E:/udp_10Gbps_stack-main/python/udp-tx-data.bin", "rb");
     if (fd == 0) begin
         $display("Failed to open file!");
         $finish;
     end
-    fc = $fopen("../../../../../../../python/mac-tx-data.bin", "wb");
+    fc = $fopen("E:/udp_10Gbps_stack-main/python/mac-tx-data.bin", "wb");
     if (fc == 0) begin
         $display("Failed to open mac-tx-data.bin!");
         $finish;
@@ -217,17 +217,17 @@ initial begin
 
 
 /********************************************************************************
- * test udp rx
+ * test udp rx from bin file (17 frames from testbench_mac_rx_gen.py)
  *   
  *******************************************************************************/
-    fe = $fopen("../../../../../../../python/mac-rx-reply.bin", "rb");
+    fe = $fopen("E:/udp_10Gbps_stack-main/python/mac-rx-reply.bin", "rb");
     if(fe == 0)begin
         $display("Failed to open file!");
         $finish;
     end
 
     #(`CLOCK_PERIOD * 20)begin
-        for (frame_idx = 1; frame_idx <= 20; frame_idx = frame_idx + 1) begin
+        for (frame_idx = 1; frame_idx <= 13; frame_idx = frame_idx + 1) begin
             if(frame_idx == 1 )begin
                 for (word_idx = 1; word_idx <= frame_idx + 6; word_idx = word_idx + 1)begin
                     r = $fread(data_buf, fe);
@@ -355,7 +355,7 @@ always @(posedge tx_axis_aclk) begin
 
     end else begin
         if (mac_tx_axis_tvalid & udp_enable) begin
-    
+            $display("TX WRITE: Cycle %0t, enable=%b, data=%h", $time, udp_enable, mac_tx_axis_tdata);  // Debug: Confirms ARP reply trigger
             for (i = 7; i >= 0; i = i - 1) begin
                 $fwrite(fc, "%c", mac_tx_axis_tdata[i*8 +: 8]);
             end

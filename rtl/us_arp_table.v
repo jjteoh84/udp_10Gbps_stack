@@ -31,8 +31,8 @@ module us_arp_table(
     output  reg       arp_request_req   ,
     input             arp_request_ack   ,
 
-    output  reg      arp_mac_exit     
-
+    output  reg      arp_mac_exit  ,   
+    output     arp_register
 
 );
     
@@ -45,6 +45,7 @@ reg     [79:0]  arp_register    =   0;
 localparam [2:0]  ARP_IDLE  = 3'b001;
 localparam [2:0]  ARP_REQ   = 3'b010;
 localparam [2:0]  ARP_END   = 3'b100;
+localparam [31:0] ARP_TIMEOUT_CYCLES = 32'd156250000; // ~1s at 156.25 MHz (adjust: 32'd78125000 for 0.5s)
 
 reg        [2:0]  arp_state = 0;
 reg        [2:0]  arp_next_state ;
@@ -88,6 +89,27 @@ always @(posedge clk) begin
     end    
 end
 
+
+
+
+// // Bypass ARP for debug: Force resolution to known host MAC/IP (remove after host fix)
+// localparam [47:0] BYPASS_REMOTE_MAC = 48'hA0369F7DE58C;  // Host MAC: A0:36:9F:7D:E5:8C
+// localparam [31:0] BYPASS_REMOTE_IP  = 32'hC0A80165;      // 192.168.1.101
+// localparam        BYPASS_EN         = 1'b1;               // Gate: Set to 0 to disable
+
+// // Force table on mismatch (overrides timeout/req logic)
+// always @(posedge clk) begin
+//     if (~rstn) begin
+//         arp_register <= {BYPASS_REMOTE_IP, BYPASS_REMOTE_MAC};  // Pre-load known entry
+//         arp_mac_exit <= BYPASS_EN;  // Force exist=1
+//         dst_mac_addr <= BYPASS_REMOTE_MAC;
+//     end else if (arp_valid && !BYPASS_EN) begin  // Normal update only if bypass off
+//         arp_register <= {recv_src_ip_addr, recv_src_mac_addr};
+//     end
+//     // Else: Hold bypass entry
+// end
+
+
 always @(*) begin
     case (arp_state)
         ARP_IDLE: begin
@@ -98,6 +120,13 @@ always @(*) begin
                         arp_next_state <= ARP_IDLE;
                     end
                   end 
+        // ARP_IDLE: begin
+        //     if (BYPASS_EN || arp_mac_exit) begin  // Bypass or match → idle
+        //         arp_next_state <= ARP_IDLE;
+        //     end else begin
+        //         arp_next_state <= ARP_REQ;
+        //     end
+        // end
         ARP_REQ : begin
                     if (arp_request_ack) begin
                         arp_next_state <= ARP_END;
@@ -110,19 +139,41 @@ always @(*) begin
                     if (arp_mac_exit) begin
                         arp_next_state  <= ARP_IDLE;
                     end
-                    else if (counter == 31'd5000) begin
+                    else if (counter == ARP_TIMEOUT_CYCLES) begin
                         arp_next_state  <= ARP_IDLE;
                     end
                     else begin
                         arp_next_state  <= ARP_END;
                     end
                   end 
+        // ARP_END: begin
+        //     if (BYPASS_EN || arp_mac_exit) begin  // Quick exit
+        //         arp_next_state <= ARP_IDLE;
+        //     end else if (counter == ARP_TIMEOUT_CYCLES) begin
+        //         arp_next_state <= ARP_IDLE;
+        //     end else begin
+        //         arp_next_state <= ARP_END;
+        //     end
+        // end
 
         default : begin
             arp_next_state  <= ARP_IDLE;
         end
     endcase
 end
+
+
+// // Gate request pulse
+// always @(posedge clk) begin
+//     if (~rstn) begin
+//         arp_request_req <= 0;
+//     end else if (arp_state == ARP_IDLE && (arp_state != arp_next_state) && !BYPASS_EN) begin  // Only if no bypass
+//         arp_request_req <= 1;
+//     end else if (arp_request_ack) begin
+//         arp_request_req <= 0;
+//     end
+// end
+
 
 always @(posedge clk) begin
     if (~rstn) begin

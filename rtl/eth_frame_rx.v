@@ -50,7 +50,9 @@ module eth_frame_rx(
 	input				  					 arp_request_ack,	//arp request ack from arp tx module
 	output				  					 arp_request_req,   //arp request to arp tx module 
 	
-	output									 mac_exist			// mac exist signal
+	output									 mac_exist,			// mac exist signal
+    output                                   arp_reply_valid,
+    output   arp_register
 );
 
 wire    [63:0]  rx_frame_axis_tdata;
@@ -101,6 +103,75 @@ wire    [31:0]  ip_recv_src_ip_addr;
 wire    [31:0]  ip2udp_recv_dst_ip_addr;
 wire    [31:0]  ip2udp_recv_src_ip_addr;
 
+
+//// ARP Header Stripper (post-demux, local to eth_frame_rx) - FIXED: Fully scoped wires, no prefix collision
+//localparam [7:0] ETH_HDR_LEN = 8'd14;  // Fixed Ethernet header bytes
+
+//// Internal FSM regs (local, non-port)
+//reg [3:0] arp_strip_byte_cnt;  // Bytes consumed in current beat
+//reg [1:0] arp_strip_phase;     // 0: idle, 1: header drop, 2: prepend, 3: pass
+//reg [15:0] arp_hdr_buf;        // Saved high 16B from partial header beat
+
+//// Fully local ARP stripped output wires (scoped prefix, no "mac_" or "arp_rx_axis_" reuse) - FIXED
+//wire [63:0] local_arp_strip_tdata;
+//wire [7:0]  local_arp_strip_tkeep;
+//wire        local_arp_strip_tvalid;
+//wire        local_arp_strip_tlast;
+//wire        local_arp_strip_tuser;
+//wire        local_arp_strip_tready = 1'b1;  // Tie (us_arp_rx no tready; always consume)
+
+//// FSM state update (seq, NBA) - Scoped regs
+//always @(posedge rx_axis_aclk) begin
+//    if (~rx_axis_aresetn) begin
+//        arp_strip_phase     <= 2'd0;
+//        arp_strip_byte_cnt  <= 4'd0;
+//        arp_hdr_buf         <= 16'h0000;
+//    end else if (mac2arp_rx_axis_tvalid && local_arp_strip_tready) begin  // Use mac2arp_rx_axis_tvalid from mac_rx_mode
+//        case (arp_strip_phase)
+//            2'd0: begin
+//                arp_strip_phase    <= 2'd1;  // Start on ARP (triggered externally via rcvd_type, but always for simplicity)
+//                arp_strip_byte_cnt <= 4'd0;
+//            end
+//            2'd1: begin
+//                arp_strip_byte_cnt <= arp_strip_byte_cnt + 8'd8;
+//                if (arp_strip_byte_cnt + 8'd8 > ETH_HDR_LEN) begin
+//                    arp_hdr_buf <= mac2arp_rx_axis_tdata[63:48];  // Save 2B ARP start (htype)
+//                    arp_strip_phase <= 2'd2;
+//                end else begin
+//                    arp_strip_phase <= 2'd1;
+//                end
+//            end
+//            2'd2: begin
+//                arp_strip_phase <= 2'd3;  // Advance to pass
+//            end
+//            2'd3: begin
+//                if (mac2arp_rx_axis_tlast) begin
+//                    arp_strip_phase <= 2'd0;
+//                end else begin
+//                    arp_strip_phase <= 2'd3;
+//                end
+//            end
+//            default: begin
+//                arp_strip_phase <= 2'd0;
+//            end
+//        endcase
+//    end
+//end
+
+//// Output mux (structural assign, ternary for wires) - Scoped locals, direct tlast pass
+//assign local_arp_strip_tvalid = (arp_strip_phase == 2'd1) ? 1'b0 : mac2arp_rx_axis_tvalid;  // Drop header
+//assign local_arp_strip_tlast  = mac2arp_rx_axis_tlast;  // Direct pass (local wire, no collision)
+//assign local_arp_strip_tuser  = mac2arp_rx_axis_tuser;
+
+//assign local_arp_strip_tdata  = (arp_strip_phase == 2'd2) ? {mac2arp_rx_axis_tdata[47:0], arp_hdr_buf} :  // Prepend htype to payload start
+//                                (arp_strip_phase == 2'd3) ? mac2arp_rx_axis_tdata : 64'h0000000000000000;
+//assign local_arp_strip_tkeep  = (arp_strip_phase == 2'd2 || arp_strip_phase == 2'd3) ? mac2arp_rx_axis_tkeep : 8'h00;
+
+//// Upstream tready to mac_rx_mode ARP path (always consume, since no backprop needed)
+//wire arp_path_tready = local_arp_strip_tready;  // Passthrough
+
+
+
 us_mac_rx mac_rx(
     .rx_axis_aclk         	(rx_axis_aclk          ),
     .rx_axis_aresetn      	(rx_axis_aresetn       ),
@@ -150,11 +221,11 @@ mac_rx_mode rx_mac_mode(
 us_arp_rx u_us_arp_rx(
     .rx_axis_aclk        	(rx_axis_aclk         ),
     .rx_axis_aresetn     	(rx_axis_aresetn      ),
-    .rx_axis_fmac_tdata  	(mac2arp_rx_axis_tdata   ),
-    .rx_axis_fmac_tkeep  	(mac2arp_rx_axis_tkeep   ),
-    .rx_axis_fmac_tvalid 	(mac2arp_rx_axis_tvalid  ),
-    .rx_axis_fmac_tlast  	(mac2arp_rx_axis_tlast   ),
-    .rx_axis_fmac_tuser  	(mac2arp_rx_axis_tuser   ),
+    .rx_axis_fmac_tdata    (local_arp_strip_tdata),  
+    .rx_axis_fmac_tkeep    (local_arp_strip_tkeep),
+    .rx_axis_fmac_tvalid   (local_arp_strip_tvalid),
+    .rx_axis_fmac_tlast    (local_arp_strip_tlast),  
+    .rx_axis_fmac_tuser    (local_arp_strip_tuser),
     .local_mac_addr      	(local_mac_addr       ),
     .local_ip_addr       	(local_ip_addr        ),
     .dst_ip_addr         	(dst_ip_addr          ),
@@ -177,7 +248,8 @@ us_arp_table u_arp_table(
     .arp_request_ack    (arp_request_ack        ),
     .arp_mac_exit      	(mac_exist              ),
     .dst_ip_addr       	(dst_ip_addr            ),
-    .dst_mac_addr      	(dst_mac_addr           )
+    .dst_mac_addr      	(dst_mac_addr           ),
+    .arp_register       (arp_register)
 );
 
 

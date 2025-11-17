@@ -11,7 +11,7 @@ DST_IP  = bytes([192, 168, 1, 144])
 UDP_SRC_PORT = 0x4554
 UDP_DST_PORT = 0x8080
 
-OUTPUT_FILE = Path("./python/mac-rx-reply.bin")
+OUTPUT_FILE = Path("./mac-rx-reply.bin")
 
 def ip_checksum(header: bytes) -> int:
     """计算 IP 校验和"""

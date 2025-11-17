@@ -32,6 +32,9 @@ module udp_stack_top(
     input   wire    [15:0]  udp_dst_port,
 
     output  wire            udp_enable,
+    output  wire  arp_reply_req,
+    // input wire arp_request_req,  //  Boot/external trigger for outbound ARP
+    output wire arp_request_ack,
 
 	/* udp tx axis interface */		  
     input  [63:0]            udp_tx_axis_tdata,
@@ -56,7 +59,10 @@ module udp_stack_top(
     input       wire[7:0]    mac_rx_axis_tkeep   ,
     input       wire         mac_rx_axis_tvalid  ,
     input       wire         mac_rx_axis_tuser   ,
-    input       wire         mac_rx_axis_tlast   
+    input       wire         mac_rx_axis_tlast   ,
+    output      wire         arp_reply_valid,
+    output      dst_mac_addr,
+    output  arp_register
 
 );
 
@@ -99,10 +105,10 @@ wire    [47:0]  dst_mac_addr;
 wire            mac_exist;
 wire            icmp_not_empty;
 
-wire            arp_reply_req;
+// wire            arp_reply_req;
 wire            arp_reply_ack;
 wire            arp_request_req;
-wire            arp_request_ack;
+// wire            arp_request_ack;
 
 wire [63:0]     icmp_tx_axis_tdata;
 wire [7:0]     	icmp_tx_axis_tkeep;
@@ -189,7 +195,9 @@ eth_frame_rx u_eth_frame_rx(
     .arp_request_ack        	(arp_request_ack         ),
     .arp_request_req        	(arp_request_req         ),
 
-    .mac_exist              	(mac_exist               )
+    .mac_exist              	(mac_exist               ),
+    .arp_reply_valid            (arp_reply_valid),
+    .arp_register (arp_register)
 );
 
 
