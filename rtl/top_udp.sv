@@ -381,6 +381,8 @@ reg [7:0] gen_tkeep = 8'hFF;
 reg [15:0] burst_cnt = 16'h0;  // Per-burst beat counter
 reg [27:0] timer_cnt = 28'h0;  // ~1s timer (100M cycles)
 reg gen_enable = 1'b0;         // Post-reset one-shot
+reg gen_tvalid = 1'b0; 
+reg gen_tlast = 1'b0;
 wire gen_sel = 1'b1;           // 1=gen mode, 0=echo FIFO (for testing)
 wire gen_tready;
 always @(posedge tx_axis_aclk) begin  // Tx domain
@@ -742,21 +744,21 @@ assign sfp0_tx_disable = tx_disable_sync[1];  // High = disable, low = enable
 // Sync lock for gating (sys_clk_100MHz domain, 2-FF for meta-stability)
 reg [1:0] lock_sync;  
 always @(posedge sys_clk_100MHz) begin
-    if (sys_reset) lock_sync <= 2'b00;  // Async assert high (unlocked state)
+    if (sys_reset) lock_sync <= 2'b00;  
     else lock_sync <= {lock_sync[0], mmcm_locked};  // Shift-in lock
 end
 wire mmcm_locked_sync = lock_sync[1];
 
 
-wire debug_clk_en = ~lock_sync[1];  // Low = enabled post-lock (invert for active-high en)
+wire debug_clk_en = ~lock_sync[1];  
 
 // 2-FF sync for reset deassert (sys_clk_100MHz domain)
 reg [1:0] rst_sync;  
 always @(posedge sys_clk_100MHz) begin
-    if (sys_reset) rst_sync <= 2'b11;  // Async assert
-    else rst_sync <= {rst_sync[0], 1'b0};  // Sync deassert
+    if (sys_reset) rst_sync <= 2'b11;  
+    else rst_sync <= {rst_sync[0], 1'b0};  
 end
-assign si5328_rst = ~rst_sync[1];  // High = no reset (inverted for active-low)
+assign si5328_rst = ~rst_sync[1];  
 
 // ===================================================================
 // UDP Test Payload Generator (ASCII "Hello from FPGA" with Packet Counter)
@@ -772,60 +774,79 @@ assign si5328_rst = ~rst_sync[1];  // High = no reset (inverted for active-low)
 // - Synthesizable, timing-clean, Verilog-2001 compliant
 // ===================================================================
 
-// Parameters (tunable - Vivado will expose for post-synth edit)
-localparam [31:0] PKT_INTERVAL = 32'd156250000;  // ~1 sec @ 156.25 MHz
-localparam [191:0] FIXED_ASCII = 192'h48656c6c6f2066726f6d204650474120504b543a20;  // "Hello from FPGA PKT: "
+localparam [223:0] HELLO_FIXED = 224'h48656c6c6f2066726f6d204650474120504b543a203030303030303030;
+//                                   "Hello from FPGA PKT: 00000000"  ← placeholder for counter
 
-// Reset synchronizer (2-FF, async assert / sync deassert, tx_clk_out domain)
-reg [1:0] gen_rst_sync = 2'b11;
-always @(posedge tx_clk_out or posedge sys_reset) begin
-    if (sys_reset) gen_rst_sync <= 2'b11;
-    else           gen_rst_sync <= {gen_rst_sync[0], 1'b0};
-end
-wire gen_rstn = ~gen_rst_sync[1] & udp_enable;  // Active-high enable post-lock
+reg [31:0] pkt_cnt    = 32'd0;
+reg [3:0]  beat       = 4'd0;  // 4 bits to safely handle ==4 check
+reg        pkt_active = 1'b0;
+reg [23:0] timer      = 24'd0; // 24 bits enough for 10M+ cycles
 
-// Rate divider and packet counter
-reg [31:0] rate_cnt = 32'd0;
-reg [31:0] pkt_cnt  = 32'd0;
-reg        gen_tvalid = 1'b0;
-reg        gen_tlast  = 1'b0;
-
-// Sequential logic (NBA for regs, single always block)
+// Timer: Only runs when udp_enable==1, starts from 0 on enable
 always @(posedge tx_clk_out) begin
-    if (~gen_rstn) begin
-        rate_cnt   <= 32'd0;
-        pkt_cnt    <= 32'd0;
-        gen_tvalid <= 1'b0;
-        gen_tlast  <= 1'b0;
-    end else begin
-        rate_cnt <= rate_cnt + 1'b1;
-
-        if (rate_cnt == PKT_INTERVAL - 1'd1) begin
-            rate_cnt   <= 32'd0;
-            pkt_cnt    <= pkt_cnt + 1'b1;
-            gen_tvalid <= 1'b1;
-            gen_tlast  <= 1'b1;
+    if (~tx_axis_aresetn) begin
+        timer <= 24'd0;
+    end else if (udp_enable) begin
+        if (timer == 24'd15_000_000) begin  // ~0.64s @ 156.25 MHz - tune here (e.g., 1_000_000 for ~6.4ms)
+            timer <= 24'd0;
         end else begin
-            gen_tvalid <= 1'b0;
-            gen_tlast  <= 1'b0;
+            timer <= timer + 1'b1;
         end
+    end else begin
+        timer <= 24'd0;  // Reset to 0 when disabled (no early counting)
     end
 end
 
-// Payload assembly (28 ASCII bytes + counter in hex, padded with spaces)
-wire [191:0] payload_counter = {
-    8'h30 + (pkt_cnt[31:28]), 8'h30 + (pkt_cnt[27:24]), 8'h30 + (pkt_cnt[23:20]), 8'h30 + (pkt_cnt[19:16]),
-    8'h30 + (pkt_cnt[15:12]), 8'h30 + (pkt_cnt[11:8]),  8'h30 + (pkt_cnt[7:4]),   8'h30 + (pkt_cnt[3:0])
-};  // Hex digits (0-9; +8'h30 for ASCII '0')
+// FSM: Start packet on timer max, advance on tready, 4 beats total
+always @(posedge tx_clk_out) begin
+    if (~tx_axis_aresetn || !udp_enable) begin
+        pkt_active <= 1'b0;
+        beat       <= 4'd0;
+        pkt_cnt    <= 32'd0;
+    end else begin
+        if (!pkt_active && timer == 24'd10_000_000) begin
+            pkt_active <= 1'b1;
+            beat       <= 4'd0;  // Start at beat 0
+            pkt_cnt    <= pkt_cnt + 1'b1;
+        end else if (pkt_active && udp_stack_tx_axis_tready) begin
+            if (beat == 4'd3) begin
+                pkt_active <= 1'b0;  // End after beat 3
+            end
+            beat <= beat + 1'b1;  // Advance beat
+        end
+        // Note: If !tready, stall (pkt_active=1, beat holds) until tready=1
+    end
+end
 
-assign udp_tx_axis_tdata = { 
-    192'h2020202020202020202020202020202020202020202020202020202020202020,  // Padding spaces (36 bytes total for beat)
-    payload_counter[31:0], FIXED_ASCII[191:192-64]  // Counter + fixed text (little-endian byte order)
-}[63:0];  // Truncate to 64b beat
+reg [63:0] tdata;
+always @(*) begin
+    case (beat)
+        4'd0: tdata = HELLO_FIXED[223:160];  // "Hello fr"
+        4'd1: tdata = HELLO_FIXED[159: 96];  // "om FPGA "
+        4'd2: tdata = HELLO_FIXED[ 95: 32];  // " PKT: 00"
+        4'd3: tdata = { 
+            nibble_to_ascii(pkt_cnt[31:28]), nibble_to_ascii(pkt_cnt[27:24]),
+            nibble_to_ascii(pkt_cnt[23:20]), nibble_to_ascii(pkt_cnt[19:16]),
+            nibble_to_ascii(pkt_cnt[15:12]), nibble_to_ascii(pkt_cnt[11: 8]),
+            nibble_to_ascii(pkt_cnt[ 7: 4]), nibble_to_ascii(pkt_cnt[ 3: 0])
+        };
+        default: tdata = 64'h0000000000000000;
+    endcase
+end
 
-assign udp_tx_axis_tkeep  = 8'hFF;     // Full 64B valid
-assign udp_tx_axis_tvalid = gen_tvalid & udp_stack_tx_axis_tready;  // Back-pressure aware
-assign udp_tx_axis_tlast  = gen_tlast;
+// Helper function for hex ASCII (define outside always - synthesizable)
+function [7:0] nibble_to_ascii;
+    input [3:0] nib;
+    begin
+        if (nib > 4'd9) nibble_to_ascii = 8'h40 + nib;  // 'A'-'F' (0x41-0x46)
+        else           nibble_to_ascii = 8'h30 + nib;  // '0'-'9' (0x30-0x39)
+    end
+endfunction
+
+assign udp_tx_axis_tdata  = tdata;
+assign udp_tx_axis_tkeep  = 8'hFF;
+assign udp_tx_axis_tvalid = pkt_active;
+assign udp_tx_axis_tlast  = pkt_active && (beat == 4'd3) && udp_stack_tx_axis_tready;
 
 // Optional: If you have an existing generator, mux here instead of direct assign
 // reg gen_sel = 1'b1;  // 1 = this simple gen, 0 = your burst gen
@@ -847,10 +868,10 @@ ila_0 ila_tx_debug (
     .probe7(mac_tx_axis_tlast),
     .probe8(mac_tx_axis_tready),
     .probe9(gtpowergood[0]),     // GT status
-    .probe10(user_tx_reset),     // Reset status
+    .probe10(pkt_active),     // Reset status
     // .probe10(sys_reset),     // Reset status
     .probe11(udp_enable),       // MMCM lock
-    .probe12(sys_reset),
+    .probe12(beat),
     .probe13(arp_reply_valid),  // Reply parsed?
     .probe14(arp_reply_req),
     .probe15(dst_mac_addr),
