@@ -1,19 +1,4 @@
-/****************************************************************************
- * @file    top_udp.v
- * @brief  
- * @author  weslie (zzhi4832@gmail.com)
- * @version 1.0
- * @date    2025-01-22
- * 
- * @par :
- * ___________________________________________________________________________
- * |    Date       |  Version    |       Author     |       Description      |
- * |---------------|-------------|------------------|------------------------|
- * |               |   v1.0      |    weslie        |                        |
- * |---------------|-------------|------------------|------------------------|
- * 
- * @copyright Copyright (c) 2025 welie
- * ***************************************************************************/
+
 `default_nettype none
 `timescale 1ns/1ps
 
@@ -368,115 +353,115 @@ udp_stack_top u_udp_stack_top(
 // Trigger: Post-reset (one-shot) or timer (~1s @100MHz)
 // Muxes with echo FIFO (sel=1 for gen; tie low for echo-only)
 
-localparam [2:0] GEN_IDLE     = 3'b000;
-localparam [2:0] GEN_BURST1   = 3'b001;  // 9+1 full beats
-localparam [2:0] GEN_BURST2   = 3'b010;  // 19+1 full beats
-localparam [2:0] GEN_BURST3   = 3'b011;  // 1+1 partial
-localparam [2:0] GEN_TIMER    = 3'b100;  // Wait ~100M cycles (~1s)
-localparam [26:0] TIMER_THRESHOLD = 28'd100_000_000;  // ~0.5s @100MHz; adjust as needed
+//localparam [2:0] GEN_IDLE     = 3'b000;
+//localparam [2:0] GEN_BURST1   = 3'b001;  // 9+1 full beats
+//localparam [2:0] GEN_BURST2   = 3'b010;  // 19+1 full beats
+//localparam [2:0] GEN_BURST3   = 3'b011;  // 1+1 partial
+//localparam [2:0] GEN_TIMER    = 3'b100;  // Wait ~100M cycles (~1s)
+//localparam [26:0] TIMER_THRESHOLD = 28'd100_000_000;  // ~0.5s @100MHz; adjust as needed
 
-reg [2:0] gen_state = GEN_IDLE, gen_next_state;
-reg [63:0] gen_tdata = 64'h0;
-reg [7:0] gen_tkeep = 8'hFF;
-reg [15:0] burst_cnt = 16'h0;  // Per-burst beat counter
-reg [27:0] timer_cnt = 28'h0;  // ~1s timer (100M cycles)
-reg gen_enable = 1'b0;         // Post-reset one-shot
-reg gen_tvalid = 1'b0; 
-reg gen_tlast = 1'b0;
-wire gen_sel = 1'b1;           // 1=gen mode, 0=echo FIFO (for testing)
-wire gen_tready;
-always @(posedge tx_axis_aclk) begin  // Tx domain
-    if (sys_reset) begin
-        gen_state <= GEN_IDLE;
-        gen_enable <= 1'b0;
-        burst_cnt <= 16'h0;
-        timer_cnt <= 28'h0;
-        gen_tvalid <= 1'b0;
-        gen_tlast <= 1'b0;
-        gen_tdata <= 64'h0;  // Start with known incremental payload
-    end else begin
-        gen_state <= gen_next_state;
+//reg [2:0] gen_state = GEN_IDLE, gen_next_state;
+//reg [63:0] gen_tdata = 64'h0;
+//reg [7:0] gen_tkeep = 8'hFF;
+//reg [15:0] burst_cnt = 16'h0;  // Per-burst beat counter
+//reg [27:0] timer_cnt = 28'h0;  // ~1s timer (100M cycles)
+//reg gen_enable = 1'b0;         // Post-reset one-shot
+//reg gen_tvalid = 1'b0; 
+//reg gen_tlast = 1'b0;
+//wire gen_sel = 1'b1;           // 1=gen mode, 0=echo FIFO (for testing)
+//wire gen_tready;
+//always @(posedge tx_axis_aclk) begin  // Tx domain
+//    if (sys_reset) begin
+//        gen_state <= GEN_IDLE;
+//        gen_enable <= 1'b0;
+//        burst_cnt <= 16'h0;
+//        timer_cnt <= 28'h0;
+//        gen_tvalid <= 1'b0;
+//        gen_tlast <= 1'b0;
+//        gen_tdata <= 64'h0;  // Start with known incremental payload
+//    end else begin
+//        gen_state <= gen_next_state;
         
-        // Free-running timer: Increment always, reset only on threshold in GEN_TIMER
-        if (gen_state == GEN_TIMER && timer_cnt == TIMER_THRESHOLD - 1'b1) begin
-            timer_cnt <= 27'h0;  // Reset at exact threshold (prevents overflow)
-        end else begin
-            timer_cnt <= timer_cnt + 1'b1;
-        end
+//        // Free-running timer: Increment always, reset only on threshold in GEN_TIMER
+//        if (gen_state == GEN_TIMER && timer_cnt == TIMER_THRESHOLD - 1'b1) begin
+//            timer_cnt <= 27'h0;  // Reset at exact threshold (prevents overflow)
+//        end else begin
+//            timer_cnt <= timer_cnt + 1'b1;
+//        end
         
-        // Burst counter: Only during active bursts
-        if (gen_enable && (gen_next_state != GEN_IDLE)) begin
-            burst_cnt <= burst_cnt + 1'b1;
-        end else if (gen_next_state == GEN_IDLE) begin
-            burst_cnt <= 16'h0;  // Reset on idle entry
-        end
+//        // Burst counter: Only during active bursts
+//        if (gen_enable && (gen_next_state != GEN_IDLE)) begin
+//            burst_cnt <= burst_cnt + 1'b1;
+//        end else if (gen_next_state == GEN_IDLE) begin
+//            burst_cnt <= 16'h0;  // Reset on idle entry
+//        end
         
-        // One-shot enable: Now reliable since timer free-runs
-        if (!gen_enable && timer_cnt > 100) begin
-            gen_enable <= 1'b1;
-        end
+//        // One-shot enable: Now reliable since timer free-runs
+//        if (!gen_enable && timer_cnt > 100) begin
+//            gen_enable <= 1'b1;
+//        end
         
-        // Incremental data: Update only when generating
-        if (gen_tvalid) begin
-            gen_tdata <= gen_tdata + 64'h1;
-        end
-    end
-end
+//        // Incremental data: Update only when generating
+//        if (gen_tvalid) begin
+//            gen_tdata <= gen_tdata + 64'h1;
+//        end
+//    end
+//end
 
-// Connect gen_tready from mux
-assign gen_tready = gen_sel ? udp_stack_tx_axis_tready : 1'b1;
+//// Connect gen_tready from mux
+//assign gen_tready = gen_sel ? udp_stack_tx_axis_tready : 1'b1;
 
-always @(*) begin  // Combo next-state
-    gen_next_state = gen_state;
-    gen_tvalid = 1'b0;
-    gen_tlast = 1'b0;
-    gen_tkeep = 8'hFF;
-    case (gen_state)
-        GEN_IDLE: begin
-            if (gen_enable && gen_tready) begin  // Respect backpressure
-                gen_next_state = GEN_BURST1;
-                gen_tvalid = 1'b1;
-            end
-        end
-        GEN_BURST1: begin
-            gen_tvalid = gen_tready;
-            if (burst_cnt == 9 && gen_tready) begin  // 9 full + 1 last (like TB repeat(9)+1)
-                gen_tlast = 1'b1;
-                gen_next_state = GEN_TIMER;
-            end
-        end
-        GEN_BURST2: begin  // Trigger after timer (or chain from BURST1)
-            gen_tvalid = gen_tready;
-            if (burst_cnt == 19 && gen_tready) begin
-                gen_tlast = 1'b1;
-                gen_next_state = GEN_BURST3;
-            end
-        end
-        GEN_BURST3: begin
-            gen_tvalid = gen_tready;
-            gen_tkeep = 8'h0F;  // Partial like TB
-            if (burst_cnt == 1 && gen_tready) begin
-                gen_tlast = 1'b1;
-                gen_next_state = GEN_TIMER;
-            end
-        end
-        GEN_TIMER: begin
-            if (timer_cnt >= TIMER_THRESHOLD - 1'b1) begin
-                gen_next_state = GEN_BURST2;
-            end
-        end
-        default: gen_next_state = GEN_IDLE;
-    endcase
-end
+//always @(*) begin  // Combo next-state
+//    gen_next_state = gen_state;
+//    gen_tvalid = 1'b0;
+//    gen_tlast = 1'b0;
+//    gen_tkeep = 8'hFF;
+//    case (gen_state)
+//        GEN_IDLE: begin
+//            if (gen_enable && gen_tready) begin  // Respect backpressure
+//                gen_next_state = GEN_BURST1;
+//                gen_tvalid = 1'b1;
+//            end
+//        end
+//        GEN_BURST1: begin
+//            gen_tvalid = gen_tready;
+//            if (burst_cnt == 9 && gen_tready) begin  // 9 full + 1 last (like TB repeat(9)+1)
+//                gen_tlast = 1'b1;
+//                gen_next_state = GEN_TIMER;
+//            end
+//        end
+//        GEN_BURST2: begin  // Trigger after timer (or chain from BURST1)
+//            gen_tvalid = gen_tready;
+//            if (burst_cnt == 19 && gen_tready) begin
+//                gen_tlast = 1'b1;
+//                gen_next_state = GEN_BURST3;
+//            end
+//        end
+//        GEN_BURST3: begin
+//            gen_tvalid = gen_tready;
+//            gen_tkeep = 8'h0F;  // Partial like TB
+//            if (burst_cnt == 1 && gen_tready) begin
+//                gen_tlast = 1'b1;
+//                gen_next_state = GEN_TIMER;
+//            end
+//        end
+//        GEN_TIMER: begin
+//            if (timer_cnt >= TIMER_THRESHOLD - 1'b1) begin
+//                gen_next_state = GEN_BURST2;
+//            end
+//        end
+//        default: gen_next_state = GEN_IDLE;
+//    endcase
+//end
 
-// Mux to udp_tx_axis_* (drive gen if sel=1, else FIFO)
-assign udp_tx_axis_tdata  = gen_sel ? gen_tdata  : fifo_tx_axis_tdata;
-assign udp_tx_axis_tkeep  = gen_sel ? gen_tkeep  : fifo_tx_axis_tkeep;
-assign udp_tx_axis_tvalid = gen_sel ? gen_tvalid : fifo_tx_axis_tvalid;
-assign udp_tx_axis_tlast  = gen_sel ? gen_tlast  : fifo_tx_axis_tlast;
+//// Mux to udp_tx_axis_* (drive gen if sel=1, else FIFO)
+//assign udp_tx_axis_tdata  = gen_sel ? gen_tdata  : fifo_tx_axis_tdata;
+//assign udp_tx_axis_tkeep  = gen_sel ? gen_tkeep  : fifo_tx_axis_tkeep;
+//assign udp_tx_axis_tvalid = gen_sel ? gen_tvalid : fifo_tx_axis_tvalid;
+//assign udp_tx_axis_tlast  = gen_sel ? gen_tlast  : fifo_tx_axis_tlast;
 
-// FIFO tready: Bypass if gen (or mux logic)
-assign fifo_tx_axis_tready = gen_sel ? 1'b1 : udp_stack_tx_axis_tready;
+//// FIFO tready: Bypass if gen (or mux logic)
+//assign fifo_tx_axis_tready = gen_sel ? 1'b1 : udp_stack_tx_axis_tready;
 
 // /// ARP Boot Trigger: One-shot pulse post-reset, driven to stack
 // // Domain: tx_clk_out[0] (TX core clk from MAC IP)
@@ -769,90 +754,62 @@ assign si5328_rst = ~rst_sync[1];
 // - Counter increments per packet (hex in payload for easy Wireshark decode)
 // - Rate: ~1 packet/second @ 156.25 MHz (tunable via PKT_INTERVAL)
 // - Gated on udp_enable (post-MMCM lock) and synced reset
-// - No conflict with existing burst generator - drives the same
-//   udp_tx_axis_t* wires (replace or mux if both needed)
-// - Synthesizable, timing-clean, Verilog-2001 compliant
 // ===================================================================
 
-localparam [223:0] HELLO_FIXED = 224'h48656c6c6f2066726f6d204650474120504b543a203030303030303030;
-//                                   "Hello from FPGA PKT: 00000000"  ← placeholder for counter
-
 reg [31:0] pkt_cnt    = 32'd0;
-reg [3:0]  beat       = 4'd0;  // 4 bits to safely handle ==4 check
+reg [2:0]  beat       = 3'd0;        // 0-3
 reg        pkt_active = 1'b0;
-reg [23:0] timer      = 24'd0; // 24 bits enough for 10M+ cycles
+reg [26:0] timer      = 27'd0;
 
-// Timer: Only runs when udp_enable==1, starts from 0 on enable
-always @(posedge tx_clk_out) begin
-    if (~tx_axis_aresetn) begin
-        timer <= 24'd0;
+localparam [26:0] PKT_INTERVAL = 27'd15_625_000;  // ~100 ms at 156.25 MHz
+
+always @(posedge tx_clk_out or negedge tx_axis_aresetn) begin
+    if (!tx_axis_aresetn) begin
+        timer      <= 0;
+        pkt_active <= 0;
+        beat       <= 0;
+        pkt_cnt    <= 0;
     end else if (udp_enable) begin
-        if (timer == 24'd15_000_000) begin  // ~0.64s @ 156.25 MHz - tune here (e.g., 1_000_000 for ~6.4ms)
-            timer <= 24'd0;
-        end else begin
-            timer <= timer + 1'b1;
-        end
-    end else begin
-        timer <= 24'd0;  // Reset to 0 when disabled (no early counting)
-    end
-end
+        // Timer
+        if (timer == PKT_INTERVAL - 1) timer <= 0;
+        else                           timer <= timer + 1'b1;
 
-// FSM: Start packet on timer max, advance on tready, 4 beats total
-always @(posedge tx_clk_out) begin
-    if (~tx_axis_aresetn || !udp_enable) begin
-        pkt_active <= 1'b0;
-        beat       <= 4'd0;
-        pkt_cnt    <= 32'd0;
-    end else begin
-        if (!pkt_active && timer == 24'd10_000_000) begin
+        // Start new packet
+        if (!pkt_active && timer == PKT_INTERVAL - 1) begin
             pkt_active <= 1'b1;
-            beat       <= 4'd0;  // Start at beat 0
+            beat       <= 0;
             pkt_cnt    <= pkt_cnt + 1'b1;
-        end else if (pkt_active && udp_stack_tx_axis_tready) begin
-            if (beat == 4'd3) begin
-                pkt_active <= 1'b0;  // End after beat 3
-            end
-            beat <= beat + 1'b1;  // Advance beat
         end
-        // Note: If !tready, stall (pkt_active=1, beat holds) until tready=1
+        // Advance on tready
+        else if (pkt_active && udp_stack_tx_axis_tready) begin
+            if (beat == 3) pkt_active <= 0;
+            beat <= beat + 1'b1;
+        end
     end
 end
 
-reg [63:0] tdata;
+// ── Payload: 32 bytes exactly ───────────────────────────────────────
+// "Hello from FPGA PKT: 00000000" 
+reg [63:0] payload ;
 always @(*) begin
-    case (beat)
-        4'd0: tdata = HELLO_FIXED[223:160];  // "Hello fr"
-        4'd1: tdata = HELLO_FIXED[159: 96];  // "om FPGA "
-        4'd2: tdata = HELLO_FIXED[ 95: 32];  // " PKT: 00"
-        4'd3: tdata = { 
-            nibble_to_ascii(pkt_cnt[31:28]), nibble_to_ascii(pkt_cnt[27:24]),
-            nibble_to_ascii(pkt_cnt[23:20]), nibble_to_ascii(pkt_cnt[19:16]),
-            nibble_to_ascii(pkt_cnt[15:12]), nibble_to_ascii(pkt_cnt[11: 8]),
-            nibble_to_ascii(pkt_cnt[ 7: 4]), nibble_to_ascii(pkt_cnt[ 3: 0])
-        };
-        default: tdata = 64'h0000000000000000;
+    case (beat) 
+        2'd0: payload = 64'h72_66_20_6f_6c_6c_65_48;  // "Hello fr"
+        2'd1: payload = 64'h20_41_47_50_46_20_6d_6f;  // "om FPGA "
+        2'd2: payload = 64'h30_30_30_20_3a_54_4b_50;  // "PKT: 000"  
+        2'd3: payload = 64'h30_30_30_30_30_30_30_30;  // "00000000"
+        default: payload = 64'h0;
     endcase
 end
 
-// Helper function for hex ASCII (define outside always - synthesizable)
-function [7:0] nibble_to_ascii;
-    input [3:0] nib;
-    begin
-        if (nib > 4'd9) nibble_to_ascii = 8'h40 + nib;  // 'A'-'F' (0x41-0x46)
-        else           nibble_to_ascii = 8'h30 + nib;  // '0'-'9' (0x30-0x39)
-    end
-endfunction
 
-assign udp_tx_axis_tdata  = tdata;
-assign udp_tx_axis_tkeep  = 8'hFF;
-assign udp_tx_axis_tvalid = pkt_active;
-assign udp_tx_axis_tlast  = pkt_active && (beat == 4'd3) && udp_stack_tx_axis_tready;
+reg gen_sel = 1'b1;  // 1 = this simple gen, 0 = echo Fifo
+assign udp_tx_axis_tdata  = gen_sel ? payload  : fifo_tx_axis_tdata;
+assign udp_tx_axis_tkeep  = gen_sel ? 8'hFF  : fifo_tx_axis_tkeep;
+assign udp_tx_axis_tvalid = gen_sel ? pkt_active : fifo_tx_axis_tvalid;
+assign udp_tx_axis_tlast  = gen_sel ? pkt_active && (beat == 3) && udp_stack_tx_axis_tready  : fifo_tx_axis_tlast;
 
-// Optional: If you have an existing generator, mux here instead of direct assign
-// reg gen_sel = 1'b1;  // 1 = this simple gen, 0 = your burst gen
-// assign udp_tx_axis_tdata = gen_sel ? simple_data : burst_data;
-// ... repeat for tkeep/tvalid/tlast
-
+// FIFO tready: Bypass if gen (or mux logic)
+assign fifo_tx_axis_tready = gen_sel ? 1'b1 : udp_stack_tx_axis_tready;
 
 
 

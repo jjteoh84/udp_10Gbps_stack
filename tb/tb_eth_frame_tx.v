@@ -25,12 +25,12 @@ module tb_eth_frame_tx();
 
 parameter FRAME  = 10;
 
-reg [47:0]		src_mac_addr = {8'h08,  8'h8f, 8'hc3, 8'he4, 8'h42, 8'h57};	
-reg [47:0]		dst_mac_addr = {8'hac,  8'h8f, 8'hc3, 8'he4, 8'h42, 8'h57};	          
-reg [31:0]      src_ip_addr  = {8'd192, 8'd168, 8'd1, 8'd10};           
-reg [31:0]      dst_ip_addr  = {8'd192, 8'd168, 8'd1, 8'd11};                                    
+reg [47:0]		src_mac_addr = {8'hac, 8'h14, 8'h74, 8'h45, 8'hbc, 8'hf4};	
+reg [47:0]		dst_mac_addr = {8'ha0, 8'h36, 8'h9f, 8'h7d, 8'he5, 8'h8c};	          
+reg [31:0]      src_ip_addr  = {8'd192, 8'd168, 8'd1, 8'd123};           
+reg [31:0]      dst_ip_addr  = {8'd192, 8'd168, 8'd1, 8'd101};                                    
 reg [15:0]      udp_src_port = 16'h8080;         
-reg [15:0]      udp_dst_port = 16'h8081;           
+reg [15:0]      udp_dst_port = 16'h8007;            
 
 reg           mac_exist =   1;
 
@@ -89,10 +89,10 @@ initial begin
     for (i = 1; i <= 64; i = i + 1) begin
         if (i <= 8) begin
             #(`CLOCK_PERIOD)begin
-                udp_tx_axis_tdata <= {i , i};
-                udp_tx_axis_tkeep <= (i == 1) ? 8'h1  : (i == 2) ? 8'h3  : (i == 3) ? 8'h7  : (i == 4) ? 8'hf :
-                                     (i == 5) ? 8'h1f : (i == 6) ? 8'h3f : (i == 7) ? 8'h7f : (i == 8) ? 8'hff : 0;
-                udp_tx_axis_tvalid<= 1;
+                udp_tx_axis_tdata  <= {i , i};
+                // To send all 8 bytes, tkeep must be all 1s.
+                udp_tx_axis_tkeep  <= 8'hff;
+                udp_tx_axis_tvalid <= 1;
                 udp_tx_axis_tlast <= 1;
             end                
             #(`CLOCK_PERIOD)begin
@@ -181,5 +181,3 @@ eth_frame_tx u_mac_frame_tx(
 always #(`CLOCK_PERIOD/2) tx_axis_aclk = ~tx_axis_aclk;
 
 endmodule
-
-
