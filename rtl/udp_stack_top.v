@@ -1,19 +1,3 @@
-/****************************************************************************
- * @file    udp_stack_top.v
- * @brief  
- * @author  weslie (zzhi4832@gmail.com)
- * @version 1.0
- * @date    2025-01-22
- * 
- * @par :
- * ___________________________________________________________________________
- * |    Date       |  Version    |       Author     |       Description      |
- * |---------------|-------------|------------------|------------------------|
- * |               |   v1.0      |    weslie        |                        |
- * |---------------|-------------|------------------|------------------------|
- * 
- * @copyright Copyright (c) 2025 welie
- * ***************************************************************************/
 
 `timescale 1ns/1ps
 
@@ -37,11 +21,11 @@ module udp_stack_top(
     output wire arp_request_ack,
 
 	/* udp tx axis interface */		  
-    input  [63:0]            udp_tx_axis_tdata,
-    input  [7:0]     		 udp_tx_axis_tkeep,
-    input                    udp_tx_axis_tvalid,		 
-    input                    udp_tx_axis_tlast,
-    output                   udp_tx_axis_tready,
+    input  wire [63:0]            udp_tx_axis_tdata,
+    input  wire [7:0]     		 udp_tx_axis_tkeep,
+    input  wire                  udp_tx_axis_tvalid,		 
+    input  wire                  udp_tx_axis_tlast,
+    output wire                  udp_tx_axis_tready,
 
 	output wire [63:0]       udp_rx_axis_tdata,
     output wire [7:0]     	 udp_rx_axis_tkeep,
@@ -61,8 +45,8 @@ module udp_stack_top(
     input       wire         mac_rx_axis_tuser   ,
     input       wire         mac_rx_axis_tlast   ,
     output      wire         arp_reply_valid,
-    output      dst_mac_addr,
-    output  arp_register
+    output  wire    [47:0]    dst_mac_addr,
+    output  wire arp_register
 
 );
 
@@ -101,7 +85,7 @@ ethernet mac frame type code
 
 ***********************************************************************************************/
 
-wire    [47:0]  dst_mac_addr;
+
 wire            mac_exist;
 wire            icmp_not_empty;
 

@@ -101,12 +101,12 @@ module us_ip_rx(
 /* **********************************************************************
  * 1. store machine for receive mac frame
  **********************************************************************/
-localparam  RECV_IP_HEADER0 =   6'b000001;
-localparam  RECV_IP_HEADER1 =   6'b000010;
-localparam  RECV_IP_HEADER2 =   6'b000100;
-localparam  RECV_IP_PAYLOAD =   6'b001000;
-localparam  RECV_IP_GOOD    =   6'b010000;
-localparam  RECV_IP_FAIL    =   6'b100000;
+localparam  RECV_IP_HEADER0 =   7'b000001;
+localparam  RECV_IP_HEADER1 =   7'b000010;
+localparam  RECV_IP_HEADER2 =   7'b000100;
+localparam  RECV_IP_PAYLOAD =   7'b001000;
+localparam  RECV_IP_GOOD    =   7'b010000;
+localparam  RECV_IP_FAIL    =   7'b100000;
 
 
 reg     [5:0]   recv_ip_state        =   0;
@@ -204,69 +204,124 @@ reg     [31:0]  ip_src_addr       =   0;
 
 reg     [31:0]  ip_dst_addr       =   0;
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// IPv4 HEADER EXTRACTION FOR 14-BYTE ETHERNET header + LITTLE-ENDIAN LANES
+// ─────────────────────────────────────────────────────────────────────────────
+// First beat after MAC strip: contains IP bytes 0–7 (shifted into lanes 1–7)
+// tdata[7:0]     = garbage/padding (or VLAN)
+// tdata[15:8]    = IP byte 0  → Version/IHL
+// tdata[23:16]   = IP byte 1  → TOS
+// tdata[31:24]   = IP byte 2  → Total Len MSB
+// tdata[39:32]   = IP byte 3  → Total Len LSB
+// tdata[47:40]   = IP byte 4  → ID MSB
+// tdata[55:48]   = IP byte 5  → ID LSB
+// tdata[63:56]   = IP byte 6  → Flags + Fragment MS
+        
 always @(posedge rx_axis_aclk) begin
     if (~rx_axis_aresetn) begin
         ip_version       <= 0;
         ip_header_length <= 0;
-        ip_frog_offset   <= 0;
-        ip_length        <= 0;
-        ip_idcode        <= 0;
-        ip_flag          <= 0;
-        ip_frog_offset   <= 0;        
+        ip_tos           <= 0;
+      
     end
     else if (mac_rx_axis_tvalid && (recv_ip_state == RECV_IP_HEADER0)) begin
+        
+
         ip_version      <= mac_rx_axis_tdata[7:4];
         ip_header_length<= mac_rx_axis_tdata[3:0];
         ip_tos          <= mac_rx_axis_tdata[15:8];
-        ip_length       <= {mac_rx_axis_tdata[23:16],mac_rx_axis_tdata[31:24]};
-        ip_idcode       <= {mac_rx_axis_tdata[39:32] , mac_rx_axis_tdata[47:40]};
-        ip_flag         <= 0;
-        ip_frog_offset  <= 0;        
+              
     end
     else begin
         ip_version      <= ip_version;
         ip_header_length<= ip_header_length;
         ip_tos          <= ip_tos;
+                 
+    end
+end
+
+always @(posedge rx_axis_aclk) begin
+    if (~rx_axis_aresetn) begin
+        ip_length        <= 0;
+        ip_idcode        <= 0;
+        ip_flag          <= 0;
+        ip_frog_offset   <= 0;  
+        ip_ttl      <=  0;
+        ip_protocol <=  0;
+
+    end
+
+    else if (mac_rx_axis_tvalid && (recv_ip_state == RECV_IP_HEADER1)) begin
+        ip_length       <= {mac_rx_axis_tdata[7:0],mac_rx_axis_tdata[15:8]};
+        ip_idcode       <= {mac_rx_axis_tdata[23:16] , mac_rx_axis_tdata[31:24]};
+        ip_flag         <= mac_rx_axis_tdata[34:32];
+        ip_frog_offset  <= mac_rx_axis_tdata[47:35];  
+        ip_ttl      <=  mac_rx_axis_tdata[55:48];
+        ip_protocol <=  mac_rx_axis_tdata[63:56];
+        
+    end
+    else begin
         ip_length       <= ip_length;     
         ip_idcode       <= ip_idcode;
         ip_flag         <= ip_flag;
-        ip_frog_offset  <= ip_frog_offset;             
-    end
-end
-
-always @(posedge rx_axis_aclk) begin
-    if (~rx_axis_aresetn) begin
-        ip_ttl      <=  0;
-        ip_protocol <=  0;
-        ip_checksum <=  0;
-        ip_src_addr <=  0;
-    end
-    else if (mac_rx_axis_tvalid && (recv_ip_state == RECV_IP_HEADER1)) begin
-        ip_ttl      <=  mac_rx_axis_tdata[7:0];
-        ip_protocol <=  mac_rx_axis_tdata[15:8];
-        ip_checksum <=  {mac_rx_axis_tdata[23:16],mac_rx_axis_tdata[31:24]};
-        ip_src_addr <=  {mac_rx_axis_tdata[39:32],mac_rx_axis_tdata[47:40],mac_rx_axis_tdata[55:48],mac_rx_axis_tdata[63:56]};
-    end
-    else begin
+        ip_frog_offset  <= ip_frog_offset;    
         ip_ttl      <=  ip_ttl;
         ip_protocol <=  ip_protocol;
-        ip_src_addr <=  ip_src_addr;
-        ip_checksum <=  ip_checksum;  
+        
     end
 end
 
+
+
+reg [15:0] ip_dst_upper;   // captured in HEADER2
+reg [15:0] ip_dst_lower;   // captured on first payload beat
+reg        ip_dst_lower_captured;
+
 always @(posedge rx_axis_aclk) begin
     if (~rx_axis_aresetn) begin
-        ip_dst_addr <= 0;
+        ip_checksum <=  0;
+        ip_src_addr <=  0;
+        ip_dst_upper <= 0;
     end
     else if (mac_rx_axis_tvalid && (recv_ip_state == RECV_IP_HEADER2)) begin
-        ip_dst_addr <= {mac_rx_axis_tdata[7:0],mac_rx_axis_tdata[15:8],mac_rx_axis_tdata[23:16],mac_rx_axis_tdata[31:24]};
+        ip_checksum <=  {mac_rx_axis_tdata[7:0],mac_rx_axis_tdata[15:8]};
+        ip_src_addr <=  {mac_rx_axis_tdata[23:16],mac_rx_axis_tdata[31:24],mac_rx_axis_tdata[39:32],mac_rx_axis_tdata[47:40]};
+        ip_dst_upper<= {mac_rx_axis_tdata[55:48], mac_rx_axis_tdata[63:56]};
     end
     else begin
-        ip_dst_addr <= ip_dst_addr;
+        ip_src_addr <=  ip_src_addr;
+        ip_checksum <=  ip_checksum;  
+        ip_dst_upper <= ip_dst_upper;
     end
 end
+
+// Capture lower half of destination IP on the very first payload beat
+always @(posedge rx_axis_aclk) begin
+    if (~rx_axis_aresetn) begin
+        ip_dst_lower <= 16'h0;
+        ip_dst_lower_captured  <= 1'b0;
+    end 
+    if (mac_rx_axis_tvalid && recv_ip_state == RECV_IP_HEADER2)
+        ip_dst_lower_captured <= 1'b0;
+    else if (mac_rx_axis_tvalid && (recv_ip_state == RECV_IP_PAYLOAD) && !ip_dst_lower_captured) begin
+        ip_dst_lower <= {mac_rx_axis_tdata[7:0],mac_rx_axis_tdata[15:8]}; 
+        ip_dst_lower_captured  <= 1'b1;
+    end
+    // Packet end → prepare for next packet
+    if (mac_rx_axis_tlast && mac_rx_axis_tvalid) begin
+        ip_dst_lower_captured <= 1'b0;
+    end
+end
+
+// Assemble final destination address once per packet
+always @(posedge rx_axis_aclk) begin
+    if (~rx_axis_aresetn)
+        ip_dst_addr <= 32'h0;
+    // else if (recv_ip_state == RECV_IP_GOOD || recv_ip_state == RECV_IP_FAIL)
+    else if (mac_rx_axis_tlast && mac_rx_axis_tvalid)
+        ip_dst_addr <= {ip_dst_upper, ip_dst_lower};   // a8c0_7b01
+end
+
 
 assign recv_dst_ip_addr = ip_dst_addr;
 assign recv_src_ip_addr = ip_src_addr;
@@ -375,7 +430,8 @@ always @(posedge rx_axis_aclk) begin
         ip_tdata <= 0;
     end
     else if (recv_ip_state == RECV_IP_PAYLOAD & mac_rx_axis_tvalid) begin
-        ip_tdata <= {mac_rx_axis_tdata[31:0], rx_tdata_reg[63:32]};
+        // ip_tdata <= {mac_rx_axis_tdata[31:0], rx_tdata_reg[63:32]};
+        ip_tdata <= mac_rx_axis_tdata;
     end
     else begin
         ip_tdata <= ip_tdata;

@@ -1,0 +1,147 @@
+// udp_rx.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <time.h>
+
+
+// Exact same hex_dump from your C++ raw monitor
+void hex_dump(const unsigned char* data, size_t len, const char* prefix) {
+    for (size_t i = 0; i < len; ++i) {
+        if (i % 16 == 0) printf("%s", prefix);
+        printf("%02x ", data[i]);
+        if ((i + 1) % 16 == 0 || i + 1 == len) printf("\n");
+    }
+}
+int main(int argc, char **argv) {
+    if (argc != 2) {
+        printf("Usage: %s <port>\n", argv[0]);
+        exit(1);
+    }
+
+    int port = atoi(argv[1]);
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        perror("socket");
+        exit(1);
+    }
+
+    // Allow reuse of address
+    int yes = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(port),
+        .sin_addr.s_addr = INADDR_ANY
+    };
+
+    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("bind");
+        close(sock);
+        exit(1);
+    }
+
+    printf("✅ Listening for UDP traffic on port %d...\n", port);
+    printf(" Make sure your FPGA is sending to this machine's IP on port %d\n", port);
+    printf("⏳ Will run for 10 seconds, printing stats every 1s...\n\n");
+
+    uint64_t total_bytes = 0;
+    uint64_t interval_bytes = 0;
+    char buf[65536];
+    time_t start = time(NULL);
+    time_t last_print = start;
+    uint32_t last_counter = 0;
+    int first = 1;
+
+    while (1) {
+        // Non-blocking check: use small timeout via select (optional, but we'll keep it simple)
+        // For now, just recv — but print every second even if idle
+        fd_set rfds;
+        struct timeval tv = {.tv_sec = 2, .tv_usec = 0};  // 1-second timeout
+        FD_ZERO(&rfds);
+        FD_SET(sock, &rfds);
+
+        int activity = select(sock + 1, &rfds, NULL, NULL, &tv);
+        if (activity > 0 && FD_ISSET(sock, &rfds)) {
+            struct sockaddr_in src;                 // ← add this
+            socklen_t src_len = sizeof(src);        // ← add this
+
+            int n = recvfrom(sock, buf, sizeof(buf), 0,
+                             (struct sockaddr*)&src, &src_len);   // ← use recvfrom
+
+            if (n > 0) {
+                total_bytes += n;
+                interval_bytes += n;
+
+                char src_ip[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &src.sin_addr, src_ip, sizeof(src_ip));
+
+                // Extract the 32-bit counter from the last 4 bytes
+                uint32_t counter = 0;
+                const char* endian = "";
+
+                if (n >= 8) {                                 // we need at least the last 4 bytes + some message
+                    // The last 8 bytes you see in the hex dump are:
+                    // 6a b0 01 00 00 00 00 00   →  counter is 0x0001b06a  (little-endian!)
+                    uint32_t raw;
+                    memcpy(&raw, buf + n - 8, 4);             // take the 4 bytes BEFORE the final 4 zeros
+
+                    // Try little-endian first (most FPGAs send LE)
+                    uint32_t cnt_le  = raw;                                    // already little-endian on x86
+                    uint32_t cnt_be  = ntohl(raw);                             // convert to big-endian
+
+                    if (first || cnt_le == last_counter + 1 ||
+                                 (cnt_le == 0 && last_counter == 0xFFFFFFFFU)) {
+                        counter = cnt_le;
+                        endian  = "LE";
+                    } else {
+                        counter = cnt_be;
+                        endian  = "BE";
+                    }
+
+                    first = 0;
+                    last_counter = counter;
+                }
+                
+                printf("\nPACKET RECEIVED  |  Counter = %u  (%s)\n", counter, endian);
+                printf("From        : %s:%d\n", src_ip, ntohs(src.sin_port));
+                printf("Payload len : %d bytes\n", n);
+                printf("Message     : \"");
+                for (int i = 0; i < n - 4 && i < 64; i++)
+                    printf("%c", (buf[i] >= 32 && buf[i] <= 126) ? buf[i] : '.');
+                printf("\"\n");
+
+                printf("Full payload hex:\n");
+                hex_dump((unsigned char*)buf, n, "    ");
+                printf("────────────────────────────────────────\n");
+                
+            }
+        }
+
+        time_t now = time(NULL);
+        if (now - last_print >= 1) {
+            double gbps = (interval_bytes * 8.0) / (1.0 * 1e9);
+            printf("[%ld] This second: %.3f Gbps | Total: %.0f bytes\n", 
+                   now - start, gbps, (double)total_bytes);
+            interval_bytes = 0;
+            last_print = now;
+        }
+
+        if (now - start >= 10) {
+            break;
+        }
+    }
+
+    double total_secs = difftime(time(NULL), start);
+    double total_gbps = (total_bytes * 8.0) / (total_secs * 1e9);
+    printf("\n Test complete.\n");
+    printf(" Total received: %.0f bytes in %.1f sec → %.3f Gbps\n", 
+           (double)total_bytes, total_secs, total_gbps);
+
+    close(sock);
+    return 0;
+}

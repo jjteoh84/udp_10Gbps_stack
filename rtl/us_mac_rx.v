@@ -47,7 +47,7 @@ module us_mac_rx(
     /* ------------------------------------------------------------------
        Clean AXI-Stream output
        ------------------------------------------------------------------ */
-    reg [4:0] header_bytes_seen;   // How many header bytes have we fully consumed so far?
+    reg [4:0] header_bytes_seen = 5'd0;
 
     always @(posedge rx_axis_aclk or negedge rx_axis_aresetn) begin
         if (~rx_axis_aresetn) begin
@@ -56,17 +56,12 @@ module us_mac_rx(
             header_bytes_seen <= 5'd0;
         end else if (rx_mac_axis_tvalid) begin
             if (header_bytes_seen < 14)
-                header_bytes_seen <= header_bytes_seen + bytes_this_beat > 14 ? 
-                                    5'd14 : header_bytes_seen + bytes_this_beat;
-            else
-                header_bytes_seen <= header_bytes_seen;  // hold at >=14
+                header_bytes_seen <= (header_bytes_seen + bytes_this_beat > 14) ? 5'd14 : header_bytes_seen + bytes_this_beat;
         end
     end
 
-    // How many header bytes still remain to be stripped in the CURRENT beat?
+    // How many header bytes remain to strip in the CURRENT beat?
     wire [4:0] header_remain = (header_bytes_seen >= 14) ? 5'd0 : (14 - header_bytes_seen);
-    wire       payload_starts_this_beat = (header_remain < bytes_this_beat) && rx_mac_axis_tvalid;
-    wire       in_payload = (header_bytes_seen >= 14) || payload_starts_this_beat;
 
     always @(posedge rx_axis_aclk) begin
         if (~rx_axis_aresetn) begin
@@ -76,25 +71,27 @@ module us_mac_rx(
             rx_frame_axis_tdata  <= 64'd0;
             rx_frame_axis_tkeep  <= 8'd0;
         end else begin
-            rx_frame_axis_tlast <= rx_mac_axis_tlast && in_payload;
-            rx_frame_axis_tuser <= rx_mac_axis_tuser;
+            // Default: no output
+            rx_frame_axis_tvalid <= 1'b0;
+            rx_frame_axis_tlast  <= 1'b0;
+            rx_frame_axis_tuser  <= rx_mac_axis_tuser;
 
-            if (in_payload && rx_mac_axis_tvalid) begin
-                rx_frame_axis_tvalid <= 1'b1;
-
+            if (rx_mac_axis_tvalid) begin
                 if (header_bytes_seen >= 14) begin
-                    // Full payload beat
-                    rx_frame_axis_tdata <= rx_mac_axis_tdata;
-                    rx_frame_axis_tkeep <= rx_mac_axis_tkeep;
-                end else begin
-                    // First payload beat - shift out remaining header bytes
-                    rx_frame_axis_tdata <= rx_mac_axis_tdata >> (header_remain * 8);
-                    rx_frame_axis_tkeep <= rx_mac_axis_tkeep >> header_remain;
+                    // Fully in payload
+                    rx_frame_axis_tdata  <= rx_mac_axis_tdata;
+                    rx_frame_axis_tkeep  <= rx_mac_axis_tkeep;
+                    rx_frame_axis_tvalid <= 1'b1;
+                    rx_frame_axis_tlast  <= rx_mac_axis_tlast;
                 end
-            end else begin
-                rx_frame_axis_tvalid <= 1'b0;
-                rx_frame_axis_tdata  <= 64'd0;
-                rx_frame_axis_tkeep  <= 8'd0;
+                else if (header_remain < bytes_this_beat) begin
+                    // This beat crosses from header → payload
+                    rx_frame_axis_tdata  <= rx_mac_axis_tdata >> (header_remain * 8);
+                    rx_frame_axis_tkeep  <= rx_mac_axis_tkeep >> header_remain;
+                    rx_frame_axis_tvalid <= 1'b1;
+                    rx_frame_axis_tlast  <= rx_mac_axis_tlast;
+                end
+                // else: still consuming header → output nothing this cycle
             end
         end
     end
@@ -108,19 +105,41 @@ module us_mac_rx(
         rx_mac_axis_tdata_reg <= rx_mac_axis_tdata;
     end
 
+
+    // ------------------------------------------------------------------
+    // Start-of-Frame pulse (exactly one cycle wide at the first beat)
+    // ------------------------------------------------------------------
+    reg sof;
+    always @(posedge rx_axis_aclk) begin
+        if (~rx_axis_aresetn)
+            sof <= 1'b0;
+        else
+            sof <= (rx_mac_axis_tvalid && (header_bytes_consumed == 0));  // true only on first beat
+    end
+    
     // Destination MAC
+    reg dst_mac_captured;
     always @(posedge rx_axis_aclk) begin
         if (~rx_axis_aresetn) begin
-            recv_dst_mac_addr <= 48'h0;
-        end else if (rx_mac_axis_tvalid && header_bytes_consumed < 5'd8) begin
-            recv_dst_mac_addr[47:40] <= rx_mac_axis_tdata[7:0];
-            recv_dst_mac_addr[39:32] <= rx_mac_axis_tdata[15:8];
-            recv_dst_mac_addr[31:24] <= rx_mac_axis_tdata[23:16];
-            recv_dst_mac_addr[23:16] <= rx_mac_axis_tdata[31:24];
-            recv_dst_mac_addr[15:8]  <= rx_mac_axis_tdata[39:32];
-            recv_dst_mac_addr[7:0]   <= rx_mac_axis_tdata[47:40];
-        end
+            // recv_dst_mac_addr <= 48'h0;
+            recv_dst_mac_addr <=48'hac_14_74_45_bc_f4;
+            dst_mac_captured <= 0;
+        end 
+        // else if (rx_mac_axis_tvalid && !src_mac_captured) begin
+        //     if (rx_mac_axis_tvalid && header_bytes_consumed <6) begin
+            
+        //         recv_dst_mac_addr[47:40] <= rx_mac_axis_tdata[7:0];
+        //         recv_dst_mac_addr[39:32] <= rx_mac_axis_tdata[15:8];
+        //         recv_dst_mac_addr[31:24] <= rx_mac_axis_tdata[23:16];
+        //         recv_dst_mac_addr[23:16] <= rx_mac_axis_tdata[31:24];
+        //         recv_dst_mac_addr[15:8]  <= rx_mac_axis_tdata[39:32];
+        //         recv_dst_mac_addr[7:0]   <= rx_mac_axis_tdata[47:40];
+        //         dst_mac_captured <=1'b1;
+        //     end
+        // end
     end
+
+
 
     reg src_mac_captured;
     // Source MAC - spans two beats, fixed line below
@@ -128,11 +147,15 @@ module us_mac_rx(
         if (~rx_axis_aresetn) begin
             recv_src_mac_addr <= 48'h0;
             src_mac_captured  <= 1'b0;
-        end else if ( rx_mac_axis_tvalid && rx_mac_axis_tlast && header_bytes_consumed == 0) begin
-            // Clear at very start of frame
-            recv_src_mac_addr <= 48'h0;
+        // end else if ( rx_mac_axis_tvalid && rx_mac_axis_tlast && header_bytes_consumed == 0) begin
+        //     // Clear at very start of frame
+        //     recv_src_mac_addr <= 48'h0;
+        // end
         end
-            
+        // else if (sof) begin
+        //     src_mac_captured <= 1'b0;
+        //     recv_src_mac_addr <= 48'h0;  // clear at start of frame
+        // end
         else if (rx_mac_axis_tvalid && !src_mac_captured) begin
             // Bytes 6-7 (a036)
             if (header_bytes_consumed <8) begin
@@ -162,13 +185,16 @@ module us_mac_rx(
     always @(posedge rx_axis_aclk) begin
         if (~rx_axis_aresetn) begin
             recv_type <= 16'd0;
-        end else if (rx_mac_axis_tvalid && header_bytes_seen == 8) begin
-            recv_type <= {rx_mac_axis_tdata[39:32], rx_mac_axis_tdata[47:40]};  // 0x0806
-            $display("DEBUG: tdata = %h, eth_candidate = %h %h → %h",
-                 rx_mac_axis_tdata,
-                 rx_mac_axis_tdata[39:32], rx_mac_axis_tdata[47:40],
-                 {rx_mac_axis_tdata[39:32], rx_mac_axis_tdata[47:40]});
+        end 
+        else if (rx_mac_axis_tvalid && header_bytes_seen == 8) begin
+            recv_type <= {rx_mac_axis_tdata[39:32], rx_mac_axis_tdata[47:40]};  // EtherType is bytes 12-13, and in little-endian lanes:
+            // $display("DEBUG: tdata = %h, eth_candidate = %h %h → %h",
+            //      rx_mac_axis_tdata,
+            //      rx_mac_axis_tdata[39:32], rx_mac_axis_tdata[47:40],
+            //      {rx_mac_axis_tdata[39:32], rx_mac_axis_tdata[47:40]});
         end
     end
+
+    
 
 endmodule

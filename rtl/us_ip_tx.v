@@ -16,7 +16,7 @@
  * ***************************************************************************/
 
 /*******************************************************************************
- ***********************************ip header **********************************
+ ***********************************ip header 20 BYTE**********************************
 
   0                   1                   2                   3  
   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -53,6 +53,17 @@
 | Padding                      | variable      | Padding to align the header to a 32-bit boundary                       |
 
 *******************************************************************************/
+// plus
+
+// An 8-byte UDP header.
+// Source Port (2 bytes): 0x1234
+// Destination Port (2 bytes): 0x5678
+// UDP Length (2 bytes): 8 (header) + 5 (payload) = 13 bytes (0x000D).
+// UDP Checksum (2 bytes): Calculated over a pseudo-header, the UDP header, and the payload.
+
+//plus
+
+// The raw payload N bytes.
 
 `timescale 1ns/1ps
 
@@ -394,6 +405,8 @@ wire	[63:0]	ip_axis_tdata	 		;
 wire	[7:0]	ip_axis_tkeep			;
 reg 	[63:0]	ip_axis_tdata_reg 		;
 reg 	[7:0]	ip_axis_tkeep_reg		;
+reg 			ip_axis_tlast_reg		;
+reg 			ip_axis_tvalid_reg		;
 wire			ip_axis_tvalid			;
 //wire			ip_axis_tready			;
 wire			ip_axis_tlast			;
@@ -461,10 +474,12 @@ always @(*) begin
 			end			
 		end
 		IP_SEND_DATA0	: begin
-			if (~ip_send_almost_full & ip_axis_tvalid & ip_axis_tlast &(ip_axis_tkeep[7:4] != 0)) begin
+			// if (~ip_send_almost_full & ip_axis_tvalid & ip_axis_tlast &(ip_axis_tkeep[7:4] != 0)) begin
+			if (~ip_send_almost_full & ip_axis_tvalid & ~ip_axis_tlast ) begin
 				ip_send_next_state <= IP_SEND_DATA1;
 			end
-			else if(~ip_send_almost_full & ip_axis_tvalid & ip_axis_tlast &(ip_axis_tkeep[7:4] == 0))begin
+			// else if(~ip_send_almost_full & ip_axis_tvalid & ip_axis_tlast &(ip_axis_tkeep[7:4] == 0))begin
+			else if(~ip_send_almost_full & ip_axis_tvalid & ip_axis_tlast)begin
 				ip_send_next_state <= IP_SEND_ENDL;
 			end
 			else begin
@@ -472,7 +487,7 @@ always @(*) begin
 			end			
 		end		
 		IP_SEND_DATA1	: begin
-			if (~ip_send_almost_full) begin
+			if (~ip_send_almost_full & ip_axis_tvalid & ip_axis_tlast ) begin
 				ip_send_next_state <= IP_SEND_ENDL;
 			end
 			else begin
@@ -523,12 +538,13 @@ always @(posedge tx_axis_aclk) begin
 end
 
 always @(*) begin
-	stream_data_rden = (ip_send_state == IP_SEND_HEADER2 || ip_send_state == IP_SEND_DATA0) & ~ip_send_almost_full;
+	stream_data_rden = (ip_send_state == IP_SEND_HEADER2 || ip_send_state == IP_SEND_DATA0 || ip_send_state == IP_SEND_DATA1) && (~ip_send_almost_full);
+                    //    && (stream_data_rdata[1] == 1'b1); // stream_data_rdata[1] = ip_axis_tvalid
 end
 
 always @(posedge tx_axis_aclk) begin
-	if (~tx_axis_aresetn) begin
-		ip_send_wren <= 0;
+    if (~tx_axis_aresetn) begin
+        ip_send_wren <= 0;
 	end
 	else if (ip_send_state == IP_SEND_HEADER0 ||
 		     ip_send_state == IP_SEND_HEADER1 || ip_send_state == IP_SEND_HEADER2 || 
@@ -537,7 +553,7 @@ always @(posedge tx_axis_aclk) begin
 	end
 	else begin
 		ip_send_wren <= 0;
-	end
+    end
 end
 
 assign ip_axis_tdata    = stream_data_rdata[73:10];
@@ -551,6 +567,12 @@ end
 
 always @(posedge tx_axis_aclk) begin
 	ip_axis_tkeep_reg  <= ip_axis_tkeep;
+end
+always @(posedge tx_axis_aclk) begin
+	ip_axis_tlast_reg  <= ip_axis_tlast;
+end
+always @(posedge tx_axis_aclk) begin
+	ip_axis_tvalid_reg <= ip_axis_tvalid;
 end
 
 /*****************************************************************************
@@ -594,7 +616,6 @@ always @(posedge tx_axis_aclk) begin
  |  Time to Live |    Protocol   |         Header Checksum       |
  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  |                       Source Address                          |
-
 *****************************************************************************/
 		IP_SEND_HEADER1	: begin
 			ip_send_wdata[7:0]  <=  8'hff;
@@ -616,23 +637,26 @@ always @(posedge tx_axis_aclk) begin
  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  |                    Options (if any)           |    Padding    |
  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
+ *  ip_send_wdata
+ *  tkeep  tdata    tvalid    tlast
+ *  7:0    71:8      73        72
 *****************************************************************************/
 		IP_SEND_HEADER2	: begin
-			ip_send_wdata[7:0]  <=  ip_axis_tkeep;
+			ip_send_wdata[7:0]  <=  8'hFF;  
 			ip_send_wdata[72]   <=  0;
 			ip_send_wdata[73]   <=  1;
 			ip_send_wdata[15:8] <=  dst_ip_addr[31:24];
 			ip_send_wdata[23:16]<=  dst_ip_addr[23:16];
 			ip_send_wdata[31:24]<=  dst_ip_addr[15:8];
 			ip_send_wdata[39:32]<=  dst_ip_addr[7:0];
-			ip_send_wdata[47:40]<=  ip_axis_tdata[7:0];
+			// ip_send_wdata[71:40]<=  32'h0000_0000;
+			ip_send_wdata[47:40]<=  ip_axis_tdata[7:0];		//half of UDP header
 			ip_send_wdata[55:48]<=  ip_axis_tdata[15:8];
 			ip_send_wdata[63:56]<=  ip_axis_tdata[23:16];
 			ip_send_wdata[71:64]<=  ip_axis_tdata[31:24];
 		end	
 
-		IP_SEND_DATA0	: begin
+		IP_SEND_DATA0	: begin  // latter half of UDP header + half of the first payload beat after udp header
 			if (ip_axis_tvalid & ip_axis_tlast) begin
 				if(ip_axis_tkeep[7:4] == 4'h0)begin
 					ip_send_wdata[7:0] <= {ip_axis_tkeep[3:0], 4'b1111 };
@@ -641,13 +665,13 @@ always @(posedge tx_axis_aclk) begin
 				end
 				else begin
 					ip_send_wdata[7:0] <= 8'hff;
-					ip_send_wdata[72]  <= 0;
+					ip_send_wdata[72]  <= 1;
 					ip_send_wdata[73]  <= 1;					
 				end
 			end
 			else begin
 				ip_send_wdata[7:0] <= 8'hff;
-					ip_send_wdata[72]  <= 0;
+					ip_send_wdata[72]  <= ip_axis_tlast;
 					ip_send_wdata[73]  <= 1;					
 			end
 			ip_send_wdata[15:8]  <= ip_axis_tdata_reg[39:32];
@@ -662,7 +686,7 @@ always @(posedge tx_axis_aclk) begin
 
 		IP_SEND_DATA1	:	begin
 			ip_send_wdata[7:0]  <= ip_axis_tkeep_reg >> 4;
-			ip_send_wdata[72]   <= 1;
+			ip_send_wdata[72]   <= ip_axis_tlast;
 			ip_send_wdata[73]   <= 1;	
 
 			ip_send_wdata[15:8]  <= ip_axis_tdata_reg[39:32];
@@ -672,7 +696,7 @@ always @(posedge tx_axis_aclk) begin
 			ip_send_wdata[47:40]<=  ip_axis_tdata[7:0];
 			ip_send_wdata[55:48]<=  ip_axis_tdata[15:8];
 			ip_send_wdata[63:56]<=  ip_axis_tdata[23:16];
-			ip_send_wdata[71:64]<=  ip_axis_tdata[31:24];				
+			ip_send_wdata[71:64]<=  ip_axis_tdata[31:24];		
 		end
 
 		default: begin
@@ -785,4 +809,14 @@ always @(*) begin
 end
 
 
+(* mark_debug = "true" *) reg 		[5:0]  frame_state;
+(* mark_debug = "true" *) wire  ip_send_empty;
+(* mark_debug = "true" *) reg 	[7:0] ip_send_next_state;
+(* mark_debug = "true" *) reg 	[7:0] ip_send_state;
+(* mark_debug = "true" *) wire	[63:0]	ip_axis_tdata;
+(* mark_debug = "true" *) wire			ip_axis_tlast;
+(* mark_debug = "true" *) wire			ip_axis_tvalid;
+(* mark_debug = "true" *) wire	[7:0]	ip_axis_tkeep;
+(* mark_debug = "true" *) reg				ip_send_wren;
+(* mark_debug = "true" *) reg				ip_send_rden;
 endmodule

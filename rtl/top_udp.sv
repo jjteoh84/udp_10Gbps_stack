@@ -20,6 +20,7 @@ module top_udp(
     output wire [4:0] led
 );
 
+localparam  gen_sel = 1'b1;  // 1 = payload generator, 0 = echo Fifo
 
 /****************************************************************
  * 10Gbps eth mac and phy interface signals
@@ -253,59 +254,25 @@ BUFG BUFG_inst (
 );
 
 
-xpm_fifo_axis #(
-    .CASCADE_HEIGHT(0),             // DECIMAL
-    .CDC_SYNC_STAGES(2),            // DECIMAL
-    .CLOCKING_MODE("common_clock"), // String
-    .ECC_MODE("no_ecc"),            // String
-    .FIFO_DEPTH(2048),              // DECIMAL
-    .FIFO_MEMORY_TYPE("auto"),      // String
-    .PACKET_FIFO("false"),          // String
-    .PROG_EMPTY_THRESH(10),         // DECIMAL
-    .PROG_FULL_THRESH(10),          // DECIMAL
-    .RD_DATA_COUNT_WIDTH(12),        // DECIMAL
-    .RELATED_CLOCKS(0),             // DECIMAL
-    .SIM_ASSERT_CHK(1),             // DECIMAL; 0=disable simulation messages, 1=enable simulation messages
-    .TDATA_WIDTH(64),               // DECIMAL
-    .TDEST_WIDTH(1),                // DECIMAL
-    .TID_WIDTH(1),                  // DECIMAL
-    .TUSER_WIDTH(1),                // DECIMAL
-    .USE_ADV_FEATURES("1000"),      // String
-    .WR_DATA_COUNT_WIDTH(12)         // DECIMAL
-)
+loopback_fifo u_loopback_fifo (
+    // Slave side (write to FIFO)
+    .s_aclk             (rx_axis_aclk),
+    .s_aresetn          (rx_axis_aresetn),
+    .s_axis_tdata       (udp_rx_axis_tdata),
+    .s_axis_tkeep       (udp_rx_axis_tkeep),
+    .s_axis_tlast       (udp_rx_axis_tlast),
+    .s_axis_tvalid      (udp_rx_axis_tvalid),
 
-xpm_fifo_udp_data_echo (
-    .almost_empty_axis  (empty),   
-    .almost_full_axis   (),     
-    .dbiterr_axis       (),             
-    .m_axis_tdata       (fifo_tx_axis_tdata),             
-    .m_axis_tdest       (),             
-    .m_axis_tid         (),                 
-    .m_axis_tkeep       (fifo_tx_axis_tkeep),             
-    .m_axis_tlast       (fifo_tx_axis_tlast),             
-    .m_axis_tstrb       (),             
-    .m_axis_tuser       (),             
-    .m_axis_tvalid      (fifo_tx_axis_tvalid),           
-    .prog_empty_axis    (),       
-    .prog_full_axis     (),         
-    .rd_data_count_axis (), 
-    .s_axis_tready      (1'b1),           
-    .sbiterr_axis       (),             
-    .wr_data_count_axis (), 
-    .injectdbiterr_axis (), 
-    .injectsbiterr_axis (), 
-    .m_aclk             (tx_axis_aclk),                         
-    .m_axis_tready      (fifo_tx_axis_tready),           
-    .s_aclk             (rx_axis_aclk),                         
-    .s_aresetn          (rx_axis_aresetn),                   
-    .s_axis_tdata       (udp_rx_axis_tdata),            
-    .s_axis_tdest       (),            
-    .s_axis_tid         (),                
-    .s_axis_tkeep       (udp_rx_axis_tkeep),             
-    .s_axis_tlast       (udp_rx_axis_tlast),             
-    .s_axis_tstrb       (),             
-    .s_axis_tuser       (),             
-    .s_axis_tvalid      (udp_rx_axis_tvalid)            
+    // Master side (read from FIFO)
+    .m_aclk             (tx_axis_aclk),
+    .m_axis_tdata       (fifo_tx_axis_tdata),
+    .m_axis_tkeep       (fifo_tx_axis_tkeep),
+    .m_axis_tlast       (fifo_tx_axis_tlast),
+    .m_axis_tvalid      (fifo_tx_axis_tvalid),
+    .m_axis_tready      (fifo_tx_axis_tready),
+
+    // Status
+    .almost_empty_axis  (empty)
 );
 
 
@@ -348,120 +315,49 @@ udp_stack_top u_udp_stack_top(
     .arp_register (arp_register)
 );
 
-// Minimal Payload Generator: Adapted from tb_udp_tx.v stimulus
-// Bursts: 10 beats full (incr data), 20 beats full, 2 beats partial (tkeep=0x0F)
-// Trigger: Post-reset (one-shot) or timer (~1s @100MHz)
-// Muxes with echo FIFO (sel=1 for gen; tie low for echo-only)
 
-//localparam [2:0] GEN_IDLE     = 3'b000;
-//localparam [2:0] GEN_BURST1   = 3'b001;  // 9+1 full beats
-//localparam [2:0] GEN_BURST2   = 3'b010;  // 19+1 full beats
-//localparam [2:0] GEN_BURST3   = 3'b011;  // 1+1 partial
-//localparam [2:0] GEN_TIMER    = 3'b100;  // Wait ~100M cycles (~1s)
-//localparam [26:0] TIMER_THRESHOLD = 28'd100_000_000;  // ~0.5s @100MHz; adjust as needed
+// ===================================================================
+// AXI-Lite over UDP Control Plane
+// ===================================================================
+wire        reg_wr_en;
+wire        reg_wr_en;
+wire [7:0]  reg_addr;
+wire [31:0] reg_wdata;
+wire        reg_rd_en;
+wire [31:0] reg_rdata;
+wire        reg_ack;
 
-//reg [2:0] gen_state = GEN_IDLE, gen_next_state;
-//reg [63:0] gen_tdata = 64'h0;
-//reg [7:0] gen_tkeep = 8'hFF;
-//reg [15:0] burst_cnt = 16'h0;  // Per-burst beat counter
-//reg [27:0] timer_cnt = 28'h0;  // ~1s timer (100M cycles)
-//reg gen_enable = 1'b0;         // Post-reset one-shot
-//reg gen_tvalid = 1'b0; 
-//reg gen_tlast = 1'b0;
-//wire gen_sel = 1'b1;           // 1=gen mode, 0=echo FIFO (for testing)
-//wire gen_tready;
-//always @(posedge tx_axis_aclk) begin  // Tx domain
-//    if (sys_reset) begin
-//        gen_state <= GEN_IDLE;
-//        gen_enable <= 1'b0;
-//        burst_cnt <= 16'h0;
-//        timer_cnt <= 28'h0;
-//        gen_tvalid <= 1'b0;
-//        gen_tlast <= 1'b0;
-//        gen_tdata <= 64'h0;  // Start with known incremental payload
-//    end else begin
-//        gen_state <= gen_next_state;
-        
-//        // Free-running timer: Increment always, reset only on threshold in GEN_TIMER
-//        if (gen_state == GEN_TIMER && timer_cnt == TIMER_THRESHOLD - 1'b1) begin
-//            timer_cnt <= 27'h0;  // Reset at exact threshold (prevents overflow)
-//        end else begin
-//            timer_cnt <= timer_cnt + 1'b1;
-//        end
-        
-//        // Burst counter: Only during active bursts
-//        if (gen_enable && (gen_next_state != GEN_IDLE)) begin
-//            burst_cnt <= burst_cnt + 1'b1;
-//        end else if (gen_next_state == GEN_IDLE) begin
-//            burst_cnt <= 16'h0;  // Reset on idle entry
-//        end
-        
-//        // One-shot enable: Now reliable since timer free-runs
-//        if (!gen_enable && timer_cnt > 100) begin
-//            gen_enable <= 1'b1;
-//        end
-        
-//        // Incremental data: Update only when generating
-//        if (gen_tvalid) begin
-//            gen_tdata <= gen_tdata + 64'h1;
-//        end
-//    end
-//end
+wire [63:0] reg_tx_tdata;
+wire [7:0]  reg_tx_tkeep;
+wire        reg_tx_tvalid;
+wire        reg_tx_tlast;
+wire        reg_tx_tready;
 
-//// Connect gen_tready from mux
-//assign gen_tready = gen_sel ? udp_stack_tx_axis_tready : 1'b1;
+// Instantiate the UDP register server
+axi4lite_udp_server u_reg_server (
+    .clk            (rx_axis_aclk),
+    .rst_n          (rx_axis_aresetn),
+    .s_axis_tdata   (udp_rx_axis_tdata),
+    .s_axis_tkeep   (udp_rx_axis_tkeep),
+    .s_axis_tvalid  (udp_rx_axis_tvalid),
+    .s_axis_tlast   (udp_rx_axis_tlast),
+    .s_axis_tready  (),                   // always ready inside module
 
-//always @(*) begin  // Combo next-state
-//    gen_next_state = gen_state;
-//    gen_tvalid = 1'b0;
-//    gen_tlast = 1'b0;
-//    gen_tkeep = 8'hFF;
-//    case (gen_state)
-//        GEN_IDLE: begin
-//            if (gen_enable && gen_tready) begin  // Respect backpressure
-//                gen_next_state = GEN_BURST1;
-//                gen_tvalid = 1'b1;
-//            end
-//        end
-//        GEN_BURST1: begin
-//            gen_tvalid = gen_tready;
-//            if (burst_cnt == 9 && gen_tready) begin  // 9 full + 1 last (like TB repeat(9)+1)
-//                gen_tlast = 1'b1;
-//                gen_next_state = GEN_TIMER;
-//            end
-//        end
-//        GEN_BURST2: begin  // Trigger after timer (or chain from BURST1)
-//            gen_tvalid = gen_tready;
-//            if (burst_cnt == 19 && gen_tready) begin
-//                gen_tlast = 1'b1;
-//                gen_next_state = GEN_BURST3;
-//            end
-//        end
-//        GEN_BURST3: begin
-//            gen_tvalid = gen_tready;
-//            gen_tkeep = 8'h0F;  // Partial like TB
-//            if (burst_cnt == 1 && gen_tready) begin
-//                gen_tlast = 1'b1;
-//                gen_next_state = GEN_TIMER;
-//            end
-//        end
-//        GEN_TIMER: begin
-//            if (timer_cnt >= TIMER_THRESHOLD - 1'b1) begin
-//                gen_next_state = GEN_BURST2;
-//            end
-//        end
-//        default: gen_next_state = GEN_IDLE;
-//    endcase
-//end
+    .m_axis_tdata   (reg_tx_tdata),
+    .m_axis_tkeep   (reg_tx_tkeep),
+    .m_axis_tvalid  (reg_tx_tvalid),
+    .m_axis_tlast   (reg_tx_tlast),
+    .m_axis_tready  (reg_tx_tready),
 
-//// Mux to udp_tx_axis_* (drive gen if sel=1, else FIFO)
-//assign udp_tx_axis_tdata  = gen_sel ? gen_tdata  : fifo_tx_axis_tdata;
-//assign udp_tx_axis_tkeep  = gen_sel ? gen_tkeep  : fifo_tx_axis_tkeep;
-//assign udp_tx_axis_tvalid = gen_sel ? gen_tvalid : fifo_tx_axis_tvalid;
-//assign udp_tx_axis_tlast  = gen_sel ? gen_tlast  : fifo_tx_axis_tlast;
+    .reg_wr_en      (reg_wr_en),
+    .reg_addr       (reg_addr),
+    .reg_wdata      (reg_wdata),
+    .reg_rd_en      (reg_rd_en),
+    .reg_rdata      (reg_rdata),
+    .reg_ack        (reg_ack)
+);
 
-//// FIFO tready: Bypass if gen (or mux logic)
-//assign fifo_tx_axis_tready = gen_sel ? 1'b1 : udp_stack_tx_axis_tready;
+
 
 // /// ARP Boot Trigger: One-shot pulse post-reset, driven to stack
 // // Domain: tx_clk_out[0] (TX core clk from MAC IP)
@@ -509,8 +405,8 @@ assign ctl_rx_process_lfi         = 1'b0;
 assign ctl_rx_test_pattern        = 1'b0;
 assign ctl_rx_test_pattern_enable = 1'b0;
 assign ctl_rx_data_pattern_select = 1'b0;
-assign ctl_rx_max_packet_len      = 15'd1536;
-assign ctl_rx_min_packet_len      = 15'd42;
+assign ctl_rx_max_packet_len      = 15'd9600;
+assign ctl_rx_min_packet_len      = 15'd64;
 assign ctl_rx_custom_preamble_enable = 1'b0;
 
 
@@ -529,6 +425,7 @@ assign ctl_tx_test_pattern_seed_b = 58'h0;
 assign ctl_tx_custom_preamble_enable = 1'b0;
 assign ctl_tx_ipg_value           = 4'd12;
 
+
 assign gtwiz_reset_tx_datapath    = 4'b0000;
 assign gtwiz_reset_rx_datapath    = 4'b0000;
 
@@ -543,7 +440,7 @@ assign rxoutclksel_in             = 3'b101;    // this value should not be chang
 
 
 
-eth_10G_mphy eth_10gmphy (
+eth_10G eth_10G (
   .gt_rxp_in_0                      (gt_rx_in_p),                                           
   .gt_rxn_in_0                      (gt_rx_in_n),                                          
   .gt_txp_out_0                     (gt_tx_out_p),                                        
@@ -702,17 +599,7 @@ eth_10G_mphy eth_10gmphy (
 );
 
 
-// (* mark_debug = "true" *) wire udp_enable;
-// (* mark_debug = "true" *) wire [63:0] udp_tx_axis_tdata;
-// (* mark_debug = "true" *) wire udp_tx_axis_tvalid;
-// (* mark_debug = "true" *) wire udp_tx_axis_tlast;
-// (* mark_debug = "true" *) wire udp_tx_axis_tready;
-// (* mark_debug = "true" *) wire [63:0] mac_tx_axis_tdata;
-// (* mark_debug = "true" *) wire mac_tx_axis_tvalid;
-// (* mark_debug = "true" *) wire mac_tx_axis_tlast;
-// (* mark_debug = "true" *) wire mac_tx_axis_tready;
-// (* mark_debug = "true" *) wire [0:0] gtpowergood;
-// (* mark_debug = "true" *) wire gt_tx_out_p;  // Physical out
+
 
 
 
@@ -745,99 +632,97 @@ always @(posedge sys_clk_100MHz) begin
 end
 assign si5328_rst = ~rst_sync[1];  
 
+
+
+
 // ===================================================================
-// UDP Test Payload Generator (ASCII "Hello from FPGA" with Packet Counter)
+// UDP Test Payload Generator
 // ===================================================================
-// Features:
-// - Single-beat packets (64B AXI-Stream beat, tkeep=8'hFF)
-// - Payload: "Hello from FPGA PKT: 00000000" (ASCII, 28 chars incl. counter)
-// - Counter increments per packet (hex in payload for easy Wireshark decode)
-// - Rate: ~1 packet/second @ 156.25 MHz (tunable via PKT_INTERVAL)
-// - Gated on udp_enable (post-MMCM lock) and synced reset
-// ===================================================================
+wire [63:0] gen_udp_tx_axis_tdata;
+wire [7:0]  gen_udp_tx_axis_tkeep;
+wire        gen_udp_tx_axis_tvalid;
+wire        gen_udp_tx_axis_tlast;
+wire        gen_udp_tx_axis_tready;
+wire [15:0] gen_beat;
 
-reg [31:0] pkt_cnt    = 32'd0;
-reg [2:0]  beat       = 3'd0;        // 0-3
-reg        pkt_active = 1'b0;
-reg [26:0] timer      = 27'd0;
-
-localparam [26:0] PKT_INTERVAL = 27'd15_625_000;  // ~100 ms at 156.25 MHz
-
-always @(posedge tx_clk_out or negedge tx_axis_aresetn) begin
-    if (!tx_axis_aresetn) begin
-        timer      <= 0;
-        pkt_active <= 0;
-        beat       <= 0;
-        pkt_cnt    <= 0;
-    end else if (udp_enable) begin
-        // Timer
-        if (timer == PKT_INTERVAL - 1) timer <= 0;
-        else                           timer <= timer + 1'b1;
-
-        // Start new packet
-        if (!pkt_active && timer == PKT_INTERVAL - 1) begin
-            pkt_active <= 1'b1;
-            beat       <= 0;
-            pkt_cnt    <= pkt_cnt + 1'b1;
-        end
-        // Advance on tready
-        else if (pkt_active && udp_stack_tx_axis_tready) begin
-            if (beat == 3) pkt_active <= 0;
-            beat <= beat + 1'b1;
-        end
-    end
-end
-
-// ── Payload: 32 bytes exactly ───────────────────────────────────────
-// "Hello from FPGA PKT: 00000000" 
-reg [63:0] payload ;
-always @(*) begin
-    case (beat) 
-        2'd0: payload = 64'h72_66_20_6f_6c_6c_65_48;  // "Hello fr"
-        2'd1: payload = 64'h20_41_47_50_46_20_6d_6f;  // "om FPGA "
-        2'd2: payload = 64'h30_30_30_20_3a_54_4b_50;  // "PKT: 000"  
-        2'd3: payload = 64'h30_30_30_30_30_30_30_30;  // "00000000"
-        default: payload = 64'h0;
-    endcase
-end
-
-
-reg gen_sel = 1'b1;  // 1 = this simple gen, 0 = echo Fifo
-assign udp_tx_axis_tdata  = gen_sel ? payload  : fifo_tx_axis_tdata;
-assign udp_tx_axis_tkeep  = gen_sel ? 8'hFF  : fifo_tx_axis_tkeep;
-assign udp_tx_axis_tvalid = gen_sel ? pkt_active : fifo_tx_axis_tvalid;
-assign udp_tx_axis_tlast  = gen_sel ? pkt_active && (beat == 3) && udp_stack_tx_axis_tready  : fifo_tx_axis_tlast;
-
-// FIFO tready: Bypass if gen (or mux logic)
-assign fifo_tx_axis_tready = gen_sel ? 1'b1 : udp_stack_tx_axis_tready;
-
-
-
-ila_0 ila_tx_debug (
-    .clk(tx_clk_out),
-    .probe0(rx_clk_out),
-    .probe1(udp_tx_axis_tvalid),     // Post-mux
-    .probe2(udp_tx_axis_tlast),
-    .probe3(udp_stack_tx_axis_tready), // Probe stack tready
-    .probe4(udp_tx_axis_tdata),      // 64-bit: Post-mux
-    .probe5(mac_tx_axis_tdata),      // 64-bit: From stack
-    .probe6(mac_tx_axis_tvalid),
-    .probe7(mac_tx_axis_tlast),
-    .probe8(mac_tx_axis_tready),
-    .probe9(gtpowergood[0]),     // GT status
-    .probe10(pkt_active),     // Reset status
-    // .probe10(sys_reset),     // Reset status
-    .probe11(udp_enable),       // MMCM lock
-    .probe12(beat),
-    .probe13(arp_reply_valid),  // Reply parsed?
-    .probe14(arp_reply_req),
-    .probe15(dst_mac_addr),
-    .probe16(arp_register[79:32]),// Table IP (32b slice)
-    .probe17(mac_rx_axis_tvalid), // RX traffic?
-    .probe18(mac_rx_axis_tdata)
+payload_generator u_payload_generator (
+    .aclk           (tx_clk_out),
+    .aresetn        (tx_axis_aresetn), 
+    .enable         (udp_enable),       
+    .reg_wr_en             (reg_wr_en),
+    .reg_addr              (reg_addr),
+    .reg_wdata             (reg_wdata),
+    .reg_rd_en             (reg_rd_en),        
+    .reg_rdata             (reg_rdata),
+    .reg_ack               (reg_ack),  
+    .m_axis_tdata   (gen_udp_tx_axis_tdata),
+    .m_axis_tkeep   (gen_udp_tx_axis_tkeep),
+    .m_axis_tvalid  (gen_udp_tx_axis_tvalid),
+    .m_axis_tlast   (gen_udp_tx_axis_tlast),
+    .m_axis_tready  (gen_udp_tx_axis_tready),
+    .beat           (gen_beat)
 );
 
 
+
+
+// Tiny arbiter: give priority to register replies (only 1 packet per second)
+assign udp_tx_axis_tdata  = reg_tx_tvalid ? reg_tx_tdata  : gen_sel ? gen_udp_tx_axis_tdata  : fifo_tx_axis_tdata;
+assign udp_tx_axis_tkeep  = reg_tx_tvalid ? reg_tx_tkeep  : gen_sel ? gen_udp_tx_axis_tkeep  : fifo_tx_axis_tkeep;
+assign udp_tx_axis_tvalid = reg_tx_tvalid ? reg_tx_tvalid : gen_sel ? gen_udp_tx_axis_tvalid : fifo_tx_axis_tvalid;
+assign udp_tx_axis_tlast  = reg_tx_tvalid ? reg_tx_tlast  : gen_sel ? gen_udp_tx_axis_tlast  : fifo_tx_axis_tlast;
+
+assign reg_tx_tready      = udp_stack_tx_axis_tready;
+assign gen_udp_tx_axis_tready = gen_sel ? udp_stack_tx_axis_tready & ~reg_tx_tvalid : 1'b0;
+assign fifo_tx_axis_tready    = gen_sel ? 1'b0 : udp_stack_tx_axis_tready;
+
+
+// ila_0 ila_tx_debug (
+//     .clk(tx_clk_out),
+//     .probe0(rx_clk_out),
+//     .probe1(udp_tx_axis_tvalid),     // Post-mux
+//     .probe2(udp_tx_axis_tlast),
+//     .probe3(udp_stack_tx_axis_tready), // Probe stack tready
+//     .probe4(udp_tx_axis_tdata),      // 64-bit: Post-mux
+//     .probe5(mac_tx_axis_tdata),      // 64-bit: From stack
+//     .probe6(mac_tx_axis_tvalid),
+//     .probe7(mac_tx_axis_tlast),
+//     .probe8(mac_tx_axis_tready),
+//     .probe9(gtpowergood[0]),     // GT status
+//     .probe10(sys_reset),     // Reset status
+//     .probe11(udp_enable),       // MMCM lock
+//     .probe12(beat),
+//     .probe13(arp_reply_valid),  // Reply parsed?
+//     .probe14(arp_reply_req),
+//     .probe15(dst_mac_addr),
+//     .probe16(arp_register[79:32]),// Table IP (32b slice)
+//     .probe17(mac_rx_axis_tvalid), // RX traffic?
+//     .probe18(mac_rx_axis_tdata)
+// );
+ 
+
+(* mark_debug = "true" *) wire udp_enable;
+(* mark_debug = "true" *) wire [63:0] udp_tx_axis_tdata;
+(* mark_debug = "true" *) wire udp_tx_axis_tvalid;
+(* mark_debug = "true" *) wire udp_tx_axis_tlast;
+(* mark_debug = "true" *) wire udp_tx_axis_tkeep;
+(* mark_debug = "true" *) wire udp_stack_tx_axis_tready;
+(* mark_debug = "true" *) wire [63:0] mac_tx_axis_tdata;
+(* mark_debug = "true" *) wire mac_tx_axis_tvalid;
+(* mark_debug = "true" *) wire mac_tx_axis_tlast;
+(* mark_debug = "true" *) wire mac_tx_axis_tkeep;
+(* mark_debug = "true" *) wire mac_tx_axis_tready;
+(* mark_debug = "true" *) wire [0:0] gtpowergood;
+(* mark_debug = "true" *) wire [63:0] mac_rx_axis_tdata;
+(* mark_debug = "true" *) wire mac_rx_axis_tvalid;
+(* mark_debug = "true" *) wire mac_rx_axis_tlast;
+// (* mark_debug = "true" *) wire [63:0]     udp_rx_axis_tdata   ;
+// (* mark_debug = "true" *) wire [7:0]     	udp_rx_axis_tkeep   ;
+// (* mark_debug = "true" *) wire            udp_rx_axis_tvalid  ; 		 
+// (* mark_debug = "true" *) wire            udp_rx_axis_tlast   ;
+(* mark_debug = "true" *) wire arp_reply_valid;
+(* mark_debug = "true" *) reg [15:0]  gen_beat;
+(* mark_debug = "true" *) reg    [47:0]  dst_mac_addr;
 
 // LED Indicators 
 reg [31:0] cnt_300M = 32'd0;

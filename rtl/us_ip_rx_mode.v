@@ -29,7 +29,7 @@ module us_ip_rx_mode (
 
     input   wire[31:0]  recv_src_ip_addr,
     input   wire[31:0]  recv_dst_ip_addr,
-    input   wire[7:0]   recv_type,
+    input   wire[15:0]   recv_type,
 
     output  reg[31:0]   ip_mode_src_addr,
     output  reg[31:0]   ip_mode_dst_addr,
@@ -47,8 +47,8 @@ module us_ip_rx_mode (
     output  reg         icmp_rx_axis_tlast    
 );
     
-localparam TYPE_UDP  = 8'h11;
-localparam TYPE_ICMP = 8'h1;
+localparam TYPE_UDP  = 15'h0011;
+localparam TYPE_ICMP = 15'h0001;
 
 always @(posedge rx_axis_aclk) begin
     if (~rx_axis_aresetn) begin
@@ -73,8 +73,29 @@ always @(posedge rx_axis_aclk) begin
         ip_mode_src_addr <= recv_src_ip_addr;
         ip_mode_dst_addr <= recv_dst_ip_addr;
         //udp'data packet
-        udp_rx_axis_tdata <= ip_rx_axis_tdata;
-        udp_rx_axis_tkeep <= ip_rx_axis_tkeep;
+        // udp_rx_axis_tdata <= ip_rx_axis_tdata;
+        // udp_rx_axis_tkeep <= ip_rx_axis_tkeep;
+        udp_rx_axis_tdata <= {
+        ip_rx_axis_tdata[7:0],
+        ip_rx_axis_tdata[15:8],
+        ip_rx_axis_tdata[23:16],
+        ip_rx_axis_tdata[31:24],
+        ip_rx_axis_tdata[39:32],
+        ip_rx_axis_tdata[47:40],
+        ip_rx_axis_tdata[55:48],
+        ip_rx_axis_tdata[63:56]
+        };  
+        
+        udp_rx_axis_tkeep <={
+        ip_rx_axis_tkeep[0],
+        ip_rx_axis_tkeep[1],
+        ip_rx_axis_tkeep[2],
+        ip_rx_axis_tkeep[3],
+        ip_rx_axis_tkeep[4],
+        ip_rx_axis_tkeep[5],
+        ip_rx_axis_tkeep[6],
+        ip_rx_axis_tkeep[7]
+    };
         udp_rx_axis_tvalid<= ip_rx_axis_tvalid;
         udp_rx_axis_tuser <= ip_rx_axis_tuser;
         udp_rx_axis_tlast <= ip_rx_axis_tlast;

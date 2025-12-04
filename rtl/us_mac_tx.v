@@ -33,6 +33,68 @@
 +-------------------------------------------------------------------------------+
 
 
+
+details:
+/*******************************************************************************
+// 10G/25G/100G Ethernet UDP/IPv4 Frame Format (Minimum 64-byte rule)
+// ---------------------------------------------------------------------------
+// All lengths are from Destination MAC to last payload/padding byte (FCS excluded)
+// Ethernet minimum frame size = 64 bytes (IEEE 802.3 Clause 4.2.3.3)
+//
+// Layer                  Field                          Bytes   Offset (from DMAC)
+// ---------------------- ------------------------------ ------- -----------------
+// Ethernet Header        Destination MAC                 6      0-5
+// 14 bytes               Source MAC                      6      6-11
+//                        EtherType (0x0800 = IPv4)       2      12-13
+// ---------------------------------------------------------------------------
+// IPv4 Header (no opts)  Version/IHL + DSCP/ECN          2      14-15   // 0x45 0x00
+// 20 bytes               Total Length (IP hdr+UDP+data)  2      16-17
+//                        Identification                  2      18-19
+//                        Flags + Fragment Offset         2      20-21   // 0x4000 (DF)
+//                        TTL                             1      22
+//                        Protocol = 17 (UDP)             1      23      // 0x11
+//                        Header Checksum                 2      24-25
+//                        Source IP Address               4      26-29
+//                        Destination IP Address          4      30-33
+
+//  4 bytes               us_ip_tx 0s padding 
+//                          (3rd header beats)            4      (MUST NOT INCLUDE THIS)
+//
+// ---------------------------------------------------------------------------
+// UDP Header             Source Port                     2      34-35
+// 8 bytes                Destination Port                2      36-37
+//                        UDP Length (8 + payload)        2      38-39
+//                        UDP Checksum (0x0000 if none)   2      40-41
+// ---------------------------------------------------------------------------
+// Payload                Application data                N      42 ...
+// Padding                Zeros (if needed)               X
+// ---------------------------------------------------------------------------
+// Total L2 payload (DMAC to last payload/padding byte) >= 64 bytes
+//
+// Padding requirement, payload = N bytes from application ):
+//     if (N < 50)  -> pad = 50 - N - 4 (the 0 padding from us_ip_tx) 
+//     else         -> pad = 0
+//     !!! NOTE:: (50 = 64 - 14 Eth header )
+//     pad_counter <= $signed(50 - frame_length);  //(frame_length = payload length only)
+
+// Common payload sizes vs padding:
+// Payload bytes | Total L2 bytes | Need padding? | Padding bytes | Final frame size (w/ FCS)
+// --------------+----------------+---------------+---------------+-------------------------
+// 0             | 42             | Yes           | 22            | 68
+// 18            | 60             | Yes           | 4            | 68
+// 19            | 61             | Yes           | 3            | 68
+// 20            | 62             | Yes           | 2            | 68
+// 21            | 63             | Yes           | 1            | 68
+// 22            | 64             | No            | 0             | 68
+// 24            | 66             | No            | 0             | 70
+// 46            | 88             | No            | 0             | 92
+// 100           | 142            | No            | 0             | 146
+// 1500          | 1542           | No            | 0             | 1542 (standard max)
+//
+//     
+//     
+// *************************************************************************** //
+
 */
 
 `timescale 1ns/1ps
@@ -144,7 +206,7 @@ always @(posedge tx_axis_aclk) begin
         pad_counter <= 'b0;
     end
     else if (mac_state == MAC_FRAME_HEADER1) begin
-        pad_counter <= $signed(46 - frame_length);
+        pad_counter <= $signed(50 - frame_length);
     end
     else begin
         pad_counter <= pad_counter; 
@@ -195,7 +257,7 @@ always @(*) begin
 
 
         MAC_FRAME_PAYLOAD : begin
-            if (~mac_send_almost_full & frame_tx_tlast & frame_tx_valid & (frame_tx_keep[7:2] == 0)) begin
+            if (~mac_send_almost_full & frame_tx_tlast & frame_tx_valid & (frame_tx_keep[7:2] == 0)) begin  //checking frame_tx_keep[7:2] because LSB two bytes was consumed in MAC_FRAME_HEADER1
                 if (pad_counter > 0) begin
                     mac_next_state <= MAC_FRAME_PADDING0;
                 end
@@ -344,16 +406,19 @@ always @(posedge tx_axis_aclk) begin
             mac_send_wdata[73]    <= 0;                       
         end
 
-        MAC_FRAME_PAYLOAD:begin
+        MAC_FRAME_PAYLOAD:begin //two bytes already consumed by header1
+            mac_send_wdata[72] <= 1;
+            mac_send_wdata[73] <= 0;
+            
             if (frame_tx_tlast & frame_tx_valid) begin
-                mac_send_wdata[72]    <= 1;
+                
                 if (pad_counter > 0) begin
                     mac_send_wdata[7:0]   <= 8'hff;
                     mac_send_wdata[73]    <= 0;                                    
                 end
                 else begin
-                    if(frame_tx_keep[7:2] == 6'b00)begin
-                        mac_send_wdata[7:0]   <= {frame_tx_keep[1:0],6'b111111};   
+                    if(frame_tx_keep[7:2] == 6'b00) begin //if current frame is last frame and the MSB 6 bytes are zero
+                        mac_send_wdata[7:0]   <= {frame_tx_keep[1:0],6'b111111};   // current frame (2 bytes) + previous frame (6 bytes) //NOTE: potential bug, previous frame tkeep wasn't taken into account.
                         mac_send_wdata[73]    <= 1;              
                     end
                     else begin
@@ -537,4 +602,23 @@ always @(*) begin
     end
 end
 
+
+
+
+(* mark_debug = "true" *) wire    [63:0]  frame_tx_axis_tdata;
+(* mark_debug = "true" *) wire  frame_tx_axis_tvalid;
+(* mark_debug = "true" *) wire frame_tx_axis_tlast;
+(* mark_debug = "true" *) wire [7:0] frame_tx_axis_tkeep;
+(* mark_debug = "true" *) wire    [63:0]  frame_tx_data;
+(* mark_debug = "true" *) wire  frame_tx_valid;
+(* mark_debug = "true" *) wire frame_tx_tlast;
+(* mark_debug = "true" *) wire [7:0] frame_tx_keep;
+(* mark_debug = "true" *) reg [15:0]  frame_length;
+(* mark_debug = "true" *) reg     [10:0]   mac_state;
+(* mark_debug = "true" *) reg     [1:0]   mac_send_state ;
+(* mark_debug = "true" *) reg stream_data_rden;
+(* mark_debug = "true" *) reg signed [15:0] pad_counter;
+(* mark_debug = "true" *) reg    [15:0] frame_type;
+(* mark_debug = "true" *) reg  mac_send_rden;
+(* mark_debug = "true" *) reg  mac_send_wren;
 endmodule

@@ -141,6 +141,8 @@ always @(posedge tx_axis_aclk)
       stream_data_wdata <= {StreamFIFOWidth{1'b0}} ;
     else if (state == STREAM && tx_axis_tvalid == 1'b1 && tx_axis_tready == 1'b1)
       stream_data_wdata  <= {tx_axis_tdata,tx_axis_tkeep,tx_axis_tvalid,tx_axis_tlast} ;
+    else
+      stream_data_wdata <= {StreamFIFOWidth{1'b0}};
   end
  
 
@@ -242,4 +244,3 @@ endgenerate
 
 
 endmodule
-
