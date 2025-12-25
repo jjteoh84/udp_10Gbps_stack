@@ -570,7 +570,7 @@ end
 always @(*) begin
     udp_payload_fifo_rden = (ip_state == IP_DATA) & ip_tx_axis_tready ? 1 : 0;
 end
-
+ 
 always @(*) begin
     if (~tx_axis_aresetn) begin
         ip_tx_axis_tdata  <= 0;
@@ -580,10 +580,10 @@ always @(*) begin
     end 
     else if (ip_state == IP_HEADER) begin
         ip_tx_axis_tdata  <= {
-                                checksum_packet_data[7:0], checksum_packet_data[15:8],
-                                checksum_packet_length[7:0]  , checksum_packet_length[15:8],   
-                                udp_dst_port[7:0]       , udp_dst_port[15:8],
-                                udp_src_port[7:0]       , udp_src_port[15:8]     
+                                udp_src_port[15:8], udp_src_port[7:0],
+                                udp_dst_port[15:8], udp_dst_port[7:0],
+                                checksum_packet_length[15:8], checksum_packet_length[7:0],
+                                checksum_packet_data[15:8], checksum_packet_data[7:0]
                              };
         ip_tx_axis_tkeep  <= 8'hff;
         ip_tx_axis_tlast  <= 0;

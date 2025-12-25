@@ -187,8 +187,8 @@ module payload_generator (
                     case (mode)
                         MODE_FIXED_HELLO:
                             case (beat)
-                                0: m_axis_tdata <= 64'h72_66_20_6f_6c_6c_65_48; // "Hello fr" 64'h48656c6c_6f206672;
-                                1: m_axis_tdata <= 64'h20_41_47_50_46_20_6d_6f; // "om FPGA " 64'h6f6d2046_50474120;
+                                0: m_axis_tdata <= 64'h48656c6c_6f206672; // "Hello fr" 64'h48656c6c_6f206672;
+                                1: m_axis_tdata <= 64'h6f6d2046_50474120; // "om FPGA " 64'h6f6d2046_50474120;
                                 2: m_axis_tdata <= {32'd0, pkt_sent};
                                 default: m_axis_tdata <= 64'h0000_0000_0000_0000;
                             endcase

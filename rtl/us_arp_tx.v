@@ -303,32 +303,38 @@ end
 always @(*) begin
     case (arp_state)
         ARP_TX_DATA0 : begin
-            arp_tx_axis_tdata  <= {
-                                   op[7:0],           op[15:8],           ip_length,         mac_length,          
-                                   protocol_type[7:0],protocol_type[15:8],hardware_type[7:0],hardware_type[15:8]                    
+            arp_tx_axis_tdata  <= { 
+                                   hardware_type[15:8], hardware_type[7:0],
+                                   protocol_type[15:8], protocol_type[7:0],
+                                   mac_length,         ip_length,
+                                   op[15:8],           op[7:0]
                                    };
             arp_tx_axis_tkeep  <= 8'hff;
                                
         end
         ARP_TX_DATA1 : begin
             arp_tx_axis_tdata <= {
-                     
-                                 src_ip_addr[23:16], src_ip_addr[31:24], src_mac_addr[7:0],  src_mac_addr[15:8], 
-                                 src_mac_addr[23:16],src_mac_addr[31:24],src_mac_addr[39:32],src_mac_addr[47:40]                                                           
+                                 src_mac_addr[47:40], src_mac_addr[39:32],
+                                 src_mac_addr[31:24], src_mac_addr[23:16],
+                                 src_mac_addr[15:8],  src_mac_addr[7:0],
+                                 src_ip_addr[31:24], src_ip_addr[23:16]
                                 };
             arp_tx_axis_tkeep  <= 8'hff;                    
         end
         ARP_TX_DATA2 : begin
             arp_tx_axis_tdata <= {
-                                    arp_dst_mac_addr[7:0],  arp_dst_mac_addr[15:8],arp_dst_mac_addr[23:16],arp_dst_mac_addr[31:24],
-                                    arp_dst_mac_addr[39:32],arp_dst_mac_addr[47:40],src_ip_addr[7:0]   ,src_ip_addr[15:8]                                 
+                                    src_ip_addr[15:8],  src_ip_addr[7:0],
+                                    arp_dst_mac_addr[47:40], arp_dst_mac_addr[39:32],
+                                    arp_dst_mac_addr[31:24], arp_dst_mac_addr[23:16],
+                                    arp_dst_mac_addr[15:8],  arp_dst_mac_addr[7:0]
                                 };
             arp_tx_axis_tkeep  <= 8'hff;                     
         end
         ARP_TX_DATA3 : begin
             arp_tx_axis_tdata <= {
-                                    32'h0,
-                                    arp_dst_ip_addr[7:0], arp_dst_ip_addr[15:8] ,arp_dst_ip_addr[23:16], arp_dst_ip_addr[31:24]                                
+                                    arp_dst_ip_addr[31:24], arp_dst_ip_addr[23:16],
+                                    arp_dst_ip_addr[15:8],  arp_dst_ip_addr[7:0],
+                                    32'h0
                                 };
             arp_tx_axis_tkeep  <= 8'h0f;             
         end

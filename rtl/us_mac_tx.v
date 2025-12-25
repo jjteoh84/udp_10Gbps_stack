@@ -1,19 +1,33 @@
 /****************************************************************************
- * @file    us_mac_frame_tx.v
- * @brief  
+ * @file    us_mac_tx.v
+ * @brief   MAC TX Layer - Ethernet Frame Assembly with Centralized Endian Conversion
  * @author  weslie (zzhi4832@gmail.com)
- * @version 1.0
+ * @version 1.1
  * @date    2025-01-22
+ * 
+ * @par Description:
+ *   Assembles complete Ethernet MAC frames from IP/UDP/ARP payloads. Adds Ethernet
+ *   header (destination MAC, source MAC, EtherType) and manages frame padding.
+ *   
+ *   **CRITICAL: Centralized Endian Conversion**
+ *   All upstream modules (us_ip_tx, us_udp_tx_v1, us_arp_tx) output data in
+ *   big-endian network byte order. This module performs a centralized 64-bit
+ *   byte-swap in the MAC_SEND_DATA state to convert to little-endian format
+ *   required by Xilinx MAC IP (or other downstream systems).
+ *   
+ *   Byte-swap operation: [63:56][55:48]...[7:0] → [7:0][15:8]...[63:56]
+ *   tkeep bits are also reversed to match byte order inversion.
  * 
  * @par :
  * ___________________________________________________________________________
  * |    Date       |  Version    |       Author     |       Description      |
  * |---------------|-------------|------------------|------------------------|
- * |               |   v1.0      |    weslie        |                        |
+ * | 2025-01-22    |   v1.0      |    weslie        | Initial version        |
+ * | 2025-01-23    |   v1.1      |    (refactored)  | Centralized byte-swap  |
  * |---------------|-------------|------------------|------------------------|
  * 
  * @copyright Copyright (c) 2025 welie
- * ***************************************************************************/
+ ***************************************************************************/
 
 /*
 +-------------------+-------------------+-------------------+-------------------+
@@ -380,28 +394,28 @@ always @(posedge tx_axis_aclk) begin
     
         MAC_FRAME_HEADER0 : begin
             mac_send_wdata[7:0]   <= 8'hff;
-            mac_send_wdata[15:8]  <= dst_mac_addr[47:40];
-            mac_send_wdata[23:16] <= dst_mac_addr[39:32];
-            mac_send_wdata[31:24] <= dst_mac_addr[31:24];
-            mac_send_wdata[39:32] <= dst_mac_addr[23:16];
-            mac_send_wdata[47:40] <= dst_mac_addr[15:8];
-            mac_send_wdata[55:48] <= dst_mac_addr[7:0];
-            mac_send_wdata[63:56] <= src_mac_addr[47:40];    
-            mac_send_wdata[71:64] <= src_mac_addr[39:32];        
+            mac_send_wdata[15:8]  <= src_mac_addr[39:32];
+            mac_send_wdata[23:16] <= src_mac_addr[47:40];
+            mac_send_wdata[31:24] <= dst_mac_addr[7:0];
+            mac_send_wdata[39:32] <= dst_mac_addr[15:8];
+            mac_send_wdata[47:40] <= dst_mac_addr[23:16];
+            mac_send_wdata[55:48] <= dst_mac_addr[31:24];
+            mac_send_wdata[63:56] <= dst_mac_addr[39:32];
+            mac_send_wdata[71:64] <= dst_mac_addr[47:40];  
             mac_send_wdata[72]    <= 1;
             mac_send_wdata[73]    <= 0;
         end
 
         MAC_FRAME_HEADER1 : begin
             mac_send_wdata[7:0]   <= 8'hff;
-            mac_send_wdata[15:8]  <= src_mac_addr[31:24];
-            mac_send_wdata[23:16] <= src_mac_addr[23:16];
-            mac_send_wdata[31:24] <= src_mac_addr[15:8];
-            mac_send_wdata[39:32] <= src_mac_addr[7:0];
-            mac_send_wdata[47:40] <= frame_type[15:8];
-            mac_send_wdata[55:48] <= frame_type[7:0];
-            mac_send_wdata[63:56] <= frame_tx_data[7:0];    
-            mac_send_wdata[71:64] <= frame_tx_data[15:8];   
+            mac_send_wdata[15:8]  <= frame_tx_data[55:48];
+            mac_send_wdata[23:16] <= frame_tx_data[63:56];
+            mac_send_wdata[31:24] <= frame_type[7:0];
+            mac_send_wdata[39:32] <= frame_type[15:8];
+            mac_send_wdata[47:40] <= src_mac_addr[7:0];
+            mac_send_wdata[55:48] <= src_mac_addr[15:8];
+            mac_send_wdata[63:56] <= src_mac_addr[23:16];    
+            mac_send_wdata[71:64] <= src_mac_addr[31:24];   
             mac_send_wdata[72]    <= 1;
             mac_send_wdata[73]    <= 0;                       
         end
@@ -417,8 +431,8 @@ always @(posedge tx_axis_aclk) begin
                     mac_send_wdata[73]    <= 0;                                    
                 end
                 else begin
-                    if(frame_tx_keep[7:2] == 6'b00) begin //if current frame is last frame and the MSB 6 bytes are zero
-                        mac_send_wdata[7:0]   <= {frame_tx_keep[1:0],6'b111111};   // current frame (2 bytes) + previous frame (6 bytes) //NOTE: potential bug, previous frame tkeep wasn't taken into account.
+                    if(frame_tx_keep[5:0] == 6'b00) begin //if current frame is last frame and the MSB 6 bytes are zero
+                        mac_send_wdata[7:0]   <= {6'b111111, frame_tx_keep[7:6]};   // current frame (2 bytes) + previous frame (6 bytes) //NOTE: potential bug, previous frame tkeep wasn't taken into account.
                         mac_send_wdata[73]    <= 1;              
                     end
                     else begin
@@ -433,21 +447,21 @@ always @(posedge tx_axis_aclk) begin
                 mac_send_wdata[73]    <= 0;    
             end 
 
-            mac_send_wdata[15:8]  <= frame_tx_data_reg[23:16];           
-            mac_send_wdata[23:16] <= frame_tx_data_reg[31:24];
-            mac_send_wdata[31:24] <= frame_tx_data_reg[39:32];
-            mac_send_wdata[39:32] <= frame_tx_data_reg[47:40];
-            mac_send_wdata[47:40] <= frame_tx_data_reg[55:48];
-            mac_send_wdata[55:48] <= frame_tx_data_reg[63:56];
+            mac_send_wdata[15:8]  <= frame_tx_keep[6] ? frame_tx_data[55:48]  : 8'b0;           
+            mac_send_wdata[23:16] <= frame_tx_keep[7] ? frame_tx_data[63:56] : 8'b0;
+            mac_send_wdata[31:24] <= frame_tx_data_reg[7:0]; 
+            mac_send_wdata[39:32] <= frame_tx_data_reg[15:8];
+            mac_send_wdata[47:40] <= frame_tx_data_reg[23:16];
+            mac_send_wdata[55:48] <= frame_tx_data_reg[31:24];
 
-            mac_send_wdata[63:56] <= frame_tx_keep[0] ? frame_tx_data[7:0]  : 8'b0;    
-            mac_send_wdata[71:64] <= frame_tx_keep[1] ? frame_tx_data[15:8] : 8'b0;   
+            mac_send_wdata[63:56] <= frame_tx_data_reg[39:32];   
+            mac_send_wdata[71:64] <= frame_tx_data_reg[47:40];  
             
         end
 
         MAC_FRAME_LAST   : begin
             if (pad_counter <= 0) begin
-                mac_send_wdata[7:0]   <= frame_tx_keep_reg >> 2 ; 
+                mac_send_wdata[7:0]   <= frame_tx_keep_reg << 2 ; 
                 mac_send_wdata[72]    <= 1; //valid
                 mac_send_wdata[73]    <= 1; //last     
             end
@@ -456,14 +470,14 @@ always @(posedge tx_axis_aclk) begin
                 mac_send_wdata[72]    <= 1; //valid
                 mac_send_wdata[73]    <= 0; //last                    
             end
-            mac_send_wdata[15:8]  <= frame_tx_data_reg[23:16];           
-            mac_send_wdata[23:16] <= frame_tx_data_reg[31:24];
-            mac_send_wdata[31:24] <= frame_tx_data_reg[39:32];
-            mac_send_wdata[39:32] <= frame_tx_data_reg[47:40];
-            mac_send_wdata[47:40] <= frame_tx_data_reg[55:48];
-            mac_send_wdata[55:48] <= frame_tx_data_reg[63:56];
-            mac_send_wdata[63:56] <= 8'h00;    
-            mac_send_wdata[71:64] <= 8'h00;                
+            mac_send_wdata[15:8]  <= 8'h00;           
+            mac_send_wdata[23:16] <= 8'h00;
+            mac_send_wdata[31:24] <= frame_tx_data_reg[7:0];
+            mac_send_wdata[39:32] <= frame_tx_data_reg[15:8];
+            mac_send_wdata[47:40] <= frame_tx_data_reg[23:16];
+            mac_send_wdata[55:48] <= frame_tx_data_reg[31:24];
+            mac_send_wdata[63:56] <= frame_tx_data_reg[39:32];    
+            mac_send_wdata[71:64] <= frame_tx_data_reg[47:40];               
         end
 
         MAC_FRAME_PADDING0:begin
@@ -587,10 +601,37 @@ always @(*) begin
     mac_send_rden = mac_tx_axis_tready & (mac_send_state == MAC_SEND_DATA) & (~mac_send_empty);
 end
 
+/*
+ * Centralized 64-bit byte-swap with tkeep reversal.
+ * 
+ * Input:  mac_send_rdata[71:8]  = [B7][B6][B5][B4][B3][B2][B1][B0]  (big-endian)
+ * Output: mac_tx_axis_tdata     = [B0][B1][B2][B3][B4][B5][B6][B7]  (little-endian)
+ * 
+ * tkeep also reversed: bit 7→0, bit 6→1, ..., bit 0→7
+ */
 always @(*) begin
     if (mac_send_state == MAC_SEND_DATA) begin
-        mac_tx_axis_tdata <= mac_send_rdata[71:8];
-        mac_tx_axis_tkeep <= mac_send_rdata[7:0];
+
+        // mac_tx_axis_tdata <= mac_send_rdata[71:8];
+        // mac_tx_axis_tkeep <= mac_send_rdata[7:0];
+        // mac_tx_axis_tvalid <= mac_send_rdata[72];
+        // mac_tx_axis_tlast <= mac_send_rdata[73];
+        // Byte-swap: reverse all 8 bytes in the 64-bit word
+        mac_tx_axis_tdata <= {
+            mac_send_rdata[15:8],   mac_send_rdata[23:16],
+            mac_send_rdata[31:24],  mac_send_rdata[39:32],
+            mac_send_rdata[47:40],  mac_send_rdata[55:48],
+            mac_send_rdata[63:56],  mac_send_rdata[71:64]
+        };
+        
+        // Reverse tkeep bit-order to match byte reversal
+        mac_tx_axis_tkeep <= {
+            mac_send_rdata[0], mac_send_rdata[1],
+            mac_send_rdata[2], mac_send_rdata[3],
+            mac_send_rdata[4], mac_send_rdata[5],
+            mac_send_rdata[6], mac_send_rdata[7]
+        };
+        
         mac_tx_axis_tvalid <= mac_send_rdata[72];
         mac_tx_axis_tlast <= mac_send_rdata[73];
     end

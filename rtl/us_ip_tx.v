@@ -304,8 +304,8 @@ always @(posedge tx_axis_aclk) begin
 		checksum_header0 <= checksum_gen({16'h4500}        ,  ip_packet_length)  ;
 		checksum_header1 <= checksum_gen(identification    ,  16'h4000)          ;
 		checksum_header2 <= checksum_gen({TTL,ip_type}     ,  16'h0000)          ;
-		checksum_header3 <= checksum_gen(src_ip_addr[15:0] ,  src_ip_addr[31:16]);
-		checksum_header4 <= checksum_gen(dst_ip_addr[15:0] ,  dst_ip_addr[31:16]);
+		checksum_header3 <= checksum_gen(src_ip_addr[31:16] ,  src_ip_addr[15:0]);
+		checksum_header4 <= checksum_gen(dst_ip_addr[31:16] ,  dst_ip_addr[15:0]);
 		checksum_header5 <= checksum_gen(checksum_header0  ,  checksum_header1)  ;
 		checksum_header6 <= checksum_gen(checksum_header2  ,  checksum_header3)  ;
 		checksum_header7 <= checksum_gen(checksum_header4  ,  checksum_header5)  ;
@@ -602,14 +602,14 @@ always @(posedge tx_axis_aclk) begin
 			ip_send_wdata[7:0]  <=  8'hff;
 			ip_send_wdata[72]   <=  0;
 			ip_send_wdata[73]   <=  1;
-			ip_send_wdata[15:8] <=  {ip_version , header_len};
-			ip_send_wdata[23:16]<=  8'h00;
-			ip_send_wdata[31:24]<=  frame_length[15:8];
-			ip_send_wdata[39:32]<=  frame_length[7:0];
-			ip_send_wdata[47:40]<=  frame_idcode[15:8];
-			ip_send_wdata[55:48]<=  frame_idcode[7:0];
-			ip_send_wdata[63:56]<=  8'h40;
-			ip_send_wdata[71:64]<=  8'h00;
+			ip_send_wdata[15:8] <=  8'h00;
+			ip_send_wdata[23:16]<=  8'h40;
+			ip_send_wdata[31:24]<=  frame_idcode[7:0];
+			ip_send_wdata[39:32]<=  frame_idcode[15:8];
+			ip_send_wdata[47:40]<=  frame_length[7:0];
+			ip_send_wdata[55:48]<=  frame_length[15:8];
+			ip_send_wdata[63:56]<=  8'h00;
+			ip_send_wdata[71:64]<=  {ip_version, header_len};
 		end
 /*****************************************************************************
  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -621,14 +621,14 @@ always @(posedge tx_axis_aclk) begin
 			ip_send_wdata[7:0]  <=  8'hff;
 			ip_send_wdata[72]   <=  0;
 			ip_send_wdata[73]   <=  1;
-			ip_send_wdata[15:8] <=  TTL;
-			ip_send_wdata[23:16]<=  frame_type;
-			ip_send_wdata[31:24]<=  frame_checksum[15:8];
-			ip_send_wdata[39:32]<=  frame_checksum[7:0];
-			ip_send_wdata[47:40]<=  src_ip_addr[31:24];
-			ip_send_wdata[55:48]<=  src_ip_addr[23:16];
-			ip_send_wdata[63:56]<=  src_ip_addr[15:8];
-			ip_send_wdata[71:64]<=  src_ip_addr[7:0];
+			ip_send_wdata[15:8] <=  src_ip_addr[7:0];
+			ip_send_wdata[23:16]<=  src_ip_addr[15:8];
+			ip_send_wdata[31:24]<=  src_ip_addr[23:16];
+			ip_send_wdata[39:32]<=  src_ip_addr[31:24];
+			ip_send_wdata[47:40]<=  frame_checksum[7:0];
+			ip_send_wdata[55:48]<=  frame_checksum[15:8];
+			ip_send_wdata[63:56]<=  frame_type;
+			ip_send_wdata[71:64]<=  TTL;
 		end	
 
 /*****************************************************************************
@@ -645,21 +645,20 @@ always @(posedge tx_axis_aclk) begin
 			ip_send_wdata[7:0]  <=  8'hFF;  
 			ip_send_wdata[72]   <=  0;
 			ip_send_wdata[73]   <=  1;
-			ip_send_wdata[15:8] <=  dst_ip_addr[31:24];
-			ip_send_wdata[23:16]<=  dst_ip_addr[23:16];
-			ip_send_wdata[31:24]<=  dst_ip_addr[15:8];
-			ip_send_wdata[39:32]<=  dst_ip_addr[7:0];
-			// ip_send_wdata[71:40]<=  32'h0000_0000;
-			ip_send_wdata[47:40]<=  ip_axis_tdata[7:0];		//half of UDP header
-			ip_send_wdata[55:48]<=  ip_axis_tdata[15:8];
-			ip_send_wdata[63:56]<=  ip_axis_tdata[23:16];
-			ip_send_wdata[71:64]<=  ip_axis_tdata[31:24];
+			ip_send_wdata[15:8] <=  ip_axis_tdata[39:32];
+			ip_send_wdata[23:16]<=  ip_axis_tdata[47:40];
+			ip_send_wdata[31:24]<=  ip_axis_tdata[55:48];
+			ip_send_wdata[39:32]<=  ip_axis_tdata[63:56];
+			ip_send_wdata[47:40]<=  dst_ip_addr[7:0];
+			ip_send_wdata[55:48]<=  dst_ip_addr[15:8];
+			ip_send_wdata[63:56]<=  dst_ip_addr[23:16];
+			ip_send_wdata[71:64]<=  dst_ip_addr[31:24];
 		end	
 
-		IP_SEND_DATA0	: begin  // latter half of UDP header + half of the first payload beat after udp header
+		IP_SEND_DATA0	: begin
 			if (ip_axis_tvalid & ip_axis_tlast) begin
-				if(ip_axis_tkeep[7:4] == 4'h0)begin
-					ip_send_wdata[7:0] <= {ip_axis_tkeep[3:0], 4'b1111 };
+				if(ip_axis_tkeep[3:0] == 4'h0)begin
+					ip_send_wdata[7:0] <= {4'b1111, ip_axis_tkeep[7:4]  };
 					ip_send_wdata[72]  <= 1;
 					ip_send_wdata[73]  <= 1;
 				end
@@ -674,29 +673,29 @@ always @(posedge tx_axis_aclk) begin
 					ip_send_wdata[72]  <= ip_axis_tlast;
 					ip_send_wdata[73]  <= 1;					
 			end
-			ip_send_wdata[15:8]  <= ip_axis_tdata_reg[39:32];
-			ip_send_wdata[23:16] <= ip_axis_tdata_reg[47:40];
-			ip_send_wdata[31:24] <= ip_axis_tdata_reg[55:48];
-			ip_send_wdata[39:32] <= ip_axis_tdata_reg[63:56];
-			ip_send_wdata[47:40]<=  ip_axis_tdata[7:0];
-			ip_send_wdata[55:48]<=  ip_axis_tdata[15:8];
-			ip_send_wdata[63:56]<=  ip_axis_tdata[23:16];
-			ip_send_wdata[71:64]<=  ip_axis_tdata[31:24];			
+			ip_send_wdata[15:8]  <= ip_axis_tdata[39:32];
+			ip_send_wdata[23:16] <= ip_axis_tdata[47:40];
+			ip_send_wdata[31:24] <= ip_axis_tdata[55:48];
+			ip_send_wdata[39:32] <= ip_axis_tdata[63:56];	
+			ip_send_wdata[47:40]<=  ip_axis_tdata_reg[7:0];
+			ip_send_wdata[55:48]<=  ip_axis_tdata_reg[15:8];
+			ip_send_wdata[63:56]<=  ip_axis_tdata_reg[23:16];
+			ip_send_wdata[71:64]<=  ip_axis_tdata_reg[31:24];		
 		end	
 
 		IP_SEND_DATA1	:	begin
-			ip_send_wdata[7:0]  <= ip_axis_tkeep_reg >> 4;
+			ip_send_wdata[7:0]  <= {(ip_axis_tkeep_reg << 4), ip_axis_tkeep[7:4] };
 			ip_send_wdata[72]   <= ip_axis_tlast;
 			ip_send_wdata[73]   <= 1;	
 
-			ip_send_wdata[15:8]  <= ip_axis_tdata_reg[39:32];
-			ip_send_wdata[23:16] <= ip_axis_tdata_reg[47:40];
-			ip_send_wdata[31:24] <= ip_axis_tdata_reg[55:48];
-			ip_send_wdata[39:32] <= ip_axis_tdata_reg[63:56];
-			ip_send_wdata[47:40]<=  ip_axis_tdata[7:0];
-			ip_send_wdata[55:48]<=  ip_axis_tdata[15:8];
-			ip_send_wdata[63:56]<=  ip_axis_tdata[23:16];
-			ip_send_wdata[71:64]<=  ip_axis_tdata[31:24];		
+			ip_send_wdata[15:8]  <= ip_axis_tdata[39:32];
+			ip_send_wdata[23:16] <= ip_axis_tdata[47:40];
+			ip_send_wdata[31:24] <= ip_axis_tdata[55:48];
+			ip_send_wdata[39:32] <= ip_axis_tdata[63:56];	
+			ip_send_wdata[47:40]<=  ip_axis_tdata_reg[7:0];
+			ip_send_wdata[55:48]<=  ip_axis_tdata_reg[15:8];
+			ip_send_wdata[63:56]<=  ip_axis_tdata_reg[23:16];
+			ip_send_wdata[71:64]<=  ip_axis_tdata_reg[31:24];	
 		end
 
 		default: begin
