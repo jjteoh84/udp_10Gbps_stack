@@ -17,10 +17,17 @@ module top_udp(
     output  wire    gt_tx_out_p,
     output  wire    si5328_rst,
     output wire sfp0_tx_disable,
-    output wire [4:0] led
+    output wire [4:0] led,
+
+    // For ASIC data capture
+    input wire clk_720m_p,
+    input wire clk_720m_n,
+    input wire data_p,
+    input wire data_n
+
 );
 
-localparam  gen_sel = 1'b1;  // 1 = payload generator, 0 = echo Fifo
+localparam  gen_sel = 1'b10;  // 00 = echo FIFO, 01 = payload generator, 10 = ASIC capture 
 
 /****************************************************************
  * 10Gbps eth mac and phy interface signals
@@ -337,17 +344,17 @@ wire        reg_tx_tready;
 axi4lite_udp_server u_reg_server (
     .clk            (rx_axis_aclk),
     .rst_n          (rx_axis_aresetn),
-    .s_axis_tdata   (udp_rx_axis_tdata),
-    .s_axis_tkeep   (udp_rx_axis_tkeep),
-    .s_axis_tvalid  (udp_rx_axis_tvalid),
-    .s_axis_tlast   (udp_rx_axis_tlast),
-    .s_axis_tready  (),                   // always ready inside module
+    .s_axis_rx_tdata   (udp_rx_axis_tdata),
+    .s_axis_rx_tkeep   (udp_rx_axis_tkeep),
+    .s_axis_rx_tvalid  (udp_rx_axis_tvalid),
+    .s_axis_rx_tlast   (udp_rx_axis_tlast),
+    .s_axis_rx_tready  (),                   // always ready inside module
 
-    .m_axis_tdata   (reg_tx_tdata),
-    .m_axis_tkeep   (reg_tx_tkeep),
-    .m_axis_tvalid  (reg_tx_tvalid),
-    .m_axis_tlast   (reg_tx_tlast),
-    .m_axis_tready  (reg_tx_tready),
+    .m_axis_tx_tdata   (reg_tx_tdata),
+    .m_axis_tx_tkeep   (reg_tx_tkeep),
+    .m_axis_tx_tvalid  (reg_tx_tvalid),
+    .m_axis_tx_tlast   (reg_tx_tlast),
+    .m_axis_tx_tready  (reg_tx_tready),
 
     .reg_wr_en      (reg_wr_en),
     .reg_addr       (reg_addr),
@@ -356,40 +363,6 @@ axi4lite_udp_server u_reg_server (
     .reg_rdata      (reg_rdata),
     .reg_ack        (reg_ack)
 );
-
-
-
-// /// ARP Boot Trigger: One-shot pulse post-reset, driven to stack
-// // Domain: tx_clk_out[0] (TX core clk from MAC IP)
-// // Reset Sync: 2FF chain for meta-stability (best practice)
-// reg rst_tx_sync1 = 1'b0, rst_tx_sync2 = 1'b0;
-// wire tx_reset_sync = rst_tx_sync2;  // Synced active-high for logic
-
-// always @(posedge tx_clk_out[0] or posedge sys_reset) begin  // Async assert
-//     if (sys_reset) begin
-//         rst_tx_sync1 <= 1'b1;
-//         rst_tx_sync2 <= 1'b1;
-//     end else begin
-//         rst_tx_sync1 <= 1'b0;
-//         rst_tx_sync2 <= rst_tx_sync1;
-//     end
-// end
-
-// reg [7:0] arp_boot_cnt = 8'h0;
-// reg arp_boot_req = 1'b0;
-// wire arp_request_ack;
-// always @(posedge tx_clk_out[0]) begin
-//     if (tx_reset_sync) begin  // Use synced reset (active-high here)
-//         arp_boot_cnt <= 8'h0;
-//         arp_boot_req <= 1'b0;
-//     end else if (arp_boot_cnt < 8'd100) begin
-//         arp_boot_cnt <= arp_boot_cnt + 1'b1;
-//         if (arp_boot_cnt == 8'd50) arp_boot_req <= 1'b1;  // Mid-hold pulse (50 cycles post-reset)
-//     end else if (arp_request_ack) begin  // Deassert on TX ack (prevents retry spam)
-//         arp_boot_req <= 1'b0;
-//     end
-// end
-
 
 
 
@@ -664,17 +637,51 @@ payload_generator u_payload_generator (
 );
 
 
+// ===================================================================
+// LATRIC raw 128-bit capture mode @720MHz
+// ===================================================================
+
+wire [63:0] asic_tx_axis_tdata;
+wire [7:0]  asic_tx_axis_tkeep;
+wire        asic_tx_axis_tvalid;
+wire        asic_tx_axis_tlast;
+wire        asic_tx_axis_tready;
+
+//  ASIC capture module
+latric_raw128_capture u_latric_raw128_capture (
+    .clk_720m_p(clk_720m_p),
+    .clk_720m_n(clk_720m_n),
+    .data_p(data_p),
+    .data_n(data_n),
+    .tx_axis_aclk(tx_axis_aclk),
+    .tx_axis_aresetn(tx_axis_aresetn),
+    .m_axis_tdata(asic_tx_axis_tdata),
+    .m_axis_tkeep(asic_tx_axis_tkeep),
+    .m_axis_tvalid(asic_tx_axis_tvalid),
+    .m_axis_tlast(asic_tx_axis_tlast),
+    .m_axis_tready(asic_tx_axis_tready),
+    .sys_reset(sys_reset),
+    .ref_clk_300(sys_clk_300Mhz)
+);
 
 
-// Tiny arbiter: give priority to register replies (only 1 packet per second)
-assign udp_tx_axis_tdata  = reg_tx_tvalid ? reg_tx_tdata  : gen_sel ? gen_udp_tx_axis_tdata  : fifo_tx_axis_tdata;
-assign udp_tx_axis_tkeep  = reg_tx_tvalid ? reg_tx_tkeep  : gen_sel ? gen_udp_tx_axis_tkeep  : fifo_tx_axis_tkeep;
-assign udp_tx_axis_tvalid = reg_tx_tvalid ? reg_tx_tvalid : gen_sel ? gen_udp_tx_axis_tvalid : fifo_tx_axis_tvalid;
-assign udp_tx_axis_tlast  = reg_tx_tvalid ? reg_tx_tlast  : gen_sel ? gen_udp_tx_axis_tlast  : fifo_tx_axis_tlast;
 
-assign reg_tx_tready      = udp_stack_tx_axis_tready;
-assign gen_udp_tx_axis_tready = gen_sel ? udp_stack_tx_axis_tready & ~reg_tx_tvalid : 1'b0;
-assign fifo_tx_axis_tready    = gen_sel ? 1'b0 : udp_stack_tx_axis_tready;
+// Mux for UDP TX based on gen_sel
+wire [63:0] sel_tx_axis_tdata = (gen_sel == 2'b10) ? asic_tx_axis_tdata : (gen_sel == 1'b1) ? gen_udp_tx_axis_tdata : fifo_tx_axis_tdata;
+wire [7:0]  sel_tx_axis_tkeep = (gen_sel == 2'b10) ? asic_tx_axis_tkeep : (gen_sel == 1'b1) ? gen_udp_tx_axis_tkeep : fifo_tx_axis_tkeep;
+wire        sel_tx_axis_tvalid = (gen_sel == 2'b10) ? asic_tx_axis_tvalid : (gen_sel == 1'b1) ? gen_udp_tx_axis_tvalid : fifo_tx_axis_tvalid;
+wire        sel_tx_axis_tlast = (gen_sel == 2'b10) ? asic_tx_axis_tlast : (gen_sel == 1'b1) ? gen_udp_tx_axis_tlast : fifo_tx_axis_tlast;
+
+// Existing mux with reg_tx (priority to reg replies)
+assign udp_tx_axis_tdata  = reg_tx_tvalid ? reg_tx_tdata  : sel_tx_axis_tdata;
+assign udp_tx_axis_tkeep  = reg_tx_tvalid ? reg_tx_tkeep  : sel_tx_axis_tkeep;
+assign udp_tx_axis_tvalid = reg_tx_tvalid ? reg_tx_tvalid : sel_tx_axis_tvalid;
+assign udp_tx_axis_tlast  = reg_tx_tvalid ? reg_tx_tlast  : sel_tx_axis_tlast;
+
+// Ready backpressure
+assign gen_udp_tx_axis_tready = (gen_sel == 1'b1) ? udp_stack_tx_axis_tready & ~reg_tx_tvalid : 1'b0;
+assign fifo_tx_axis_tready    = (gen_sel == 2'b00) ? udp_stack_tx_axis_tready & ~reg_tx_tvalid : 1'b0;
+assign asic_tx_axis_tready    = (gen_sel == 2'b10) ? udp_stack_tx_axis_tready & ~reg_tx_tvalid : 1'b0;
 
 
 // ila_0 ila_tx_debug (
