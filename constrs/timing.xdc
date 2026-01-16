@@ -37,4 +37,14 @@ create_clock -period 6.400 -name tx_axis_aclk -waveform {0.000 3.200} [get_pins 
 
 
 
+create_clock -period 1.388888 -name clk_720m [get_ports clk_720m_p]
+set_input_delay -clock clk_720m -max 0.694 [get_ports data_p]  #50% UI max delay
+set_input_delay -clock clk_720m -min 0.000 [get_ports data_p]  #Min delay
+set_clock_groups -asynchronous -group [get_clocks clk_720m] -group [get_clocks tx_axis_aclk]
 
+
+#Generated clock for 90 MHz (if using BUFGCE_DIV)
+create_generated_clock -name clk90 -source [get_ports clk_720m_p] -divide_by 8 [get_pins clk_div_inst/O]
+
+# Async clock groups for CDC FIFO
+set_clock_groups -asynchronous -group [get_clocks clk90] -group [get_clocks tx_axis_aclk]

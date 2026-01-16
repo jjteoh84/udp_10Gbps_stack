@@ -92,3 +92,17 @@ set_property IOSTANDARD  LVCMOS18 [get_ports {led[3]}]
 set_property PACKAGE_PIN N22 [get_ports {led[4]}]
 set_property IOSTANDARD  LVCMOS18 [get_ports {led[4]}]
 
+
+
+
+#Adaptor board's LPC pins 
+
+set_property PACKAGE_PIN W23 [get_ports clk_40m_p]
+set_property PACKAGE_PIN W24 [get_ports clk_40m_n]
+set_property IOSTANDARD LVDS [get_ports clk_40m_p]
+set_property DIFF_TERM TRUE [get_ports clk_40m_p]
+
+set_property PACKAGE_PIN AC22 [get_ports data_p]
+set_property PACKAGE_PIN AC23 [get_ports data_n]
+set_property IOSTANDARD LVDS [get_ports data_p]
+set_property DIFF_TERM TRUE [get_ports data_p]
