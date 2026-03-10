@@ -27,7 +27,7 @@ module top_udp(
 
 );
 
-localparam  gen_sel = 1'b10;  // 00 = echo FIFO, 01 = payload generator, 10 = ASIC capture 
+localparam  gen_sel = 2'b10;  // 00 = echo FIFO, 01 = payload generator, 10 = ASIC capture 
 
 /****************************************************************
  * 10Gbps eth mac and phy interface signals
@@ -647,24 +647,33 @@ wire        asic_tx_axis_tvalid;
 wire        asic_tx_axis_tlast;
 wire        asic_tx_axis_tready;
 
+wire        re_train;
+
+
+reg  re_train;
+wire asic_training_done;
+wire [4:0] asic_center_tap;
 //  ASIC capture module
 latric_raw128_capture u_latric_raw128_capture (
-    .clk_720m_p(clk_720m_p),
-    .clk_720m_n(clk_720m_n),
+    .clk720_p(clk_720m_p),
+    .clk720_n(clk_720m_n),
     .data_p(data_p),
     .data_n(data_n),
     .tx_axis_aclk(tx_axis_aclk),
-    .tx_axis_aresetn(tx_axis_aresetn),
+    .tx_axis_aresetn(tx_axis_aresetn), 
     .m_axis_tdata(asic_tx_axis_tdata),
     .m_axis_tkeep(asic_tx_axis_tkeep),
     .m_axis_tvalid(asic_tx_axis_tvalid),
     .m_axis_tlast(asic_tx_axis_tlast),
     .m_axis_tready(asic_tx_axis_tready),
     .sys_reset(sys_reset),
-    .ref_clk_300(sys_clk_300Mhz)
+    .training_done(asic_training_done),
+    .center_tap(asic_center_tap),
+    .led(dbg_led)
+   
 );
 
-
+wire [2:0] dbg_led;
 
 // Mux for UDP TX based on gen_sel
 wire [63:0] sel_tx_axis_tdata = (gen_sel == 2'b10) ? asic_tx_axis_tdata : (gen_sel == 1'b1) ? gen_udp_tx_axis_tdata : fifo_tx_axis_tdata;
@@ -719,18 +728,19 @@ assign asic_tx_axis_tready    = (gen_sel == 2'b10) ? udp_stack_tx_axis_tready & 
 (* mark_debug = "true" *) wire mac_tx_axis_tlast;
 (* mark_debug = "true" *) wire mac_tx_axis_tkeep;
 (* mark_debug = "true" *) wire mac_tx_axis_tready;
-(* mark_debug = "true" *) wire [0:0] gtpowergood;
-(* mark_debug = "true" *) wire [63:0] mac_rx_axis_tdata;
-(* mark_debug = "true" *) wire mac_rx_axis_tvalid;
-(* mark_debug = "true" *) wire mac_rx_axis_tlast;
+
+//(* mark_debug = "true" *) wire [0:0] gtpowergood;
+//(* mark_debug = "true" *) wire [63:0] mac_rx_axis_tdata;
+//(* mark_debug = "true" *) wire mac_rx_axis_tvalid;
+//(* mark_debug = "true" *) wire mac_rx_axis_tlast;
 // (* mark_debug = "true" *) wire [63:0]     udp_rx_axis_tdata   ;
 // (* mark_debug = "true" *) wire [7:0]     	udp_rx_axis_tkeep   ;
 // (* mark_debug = "true" *) wire            udp_rx_axis_tvalid  ; 		 
 // (* mark_debug = "true" *) wire            udp_rx_axis_tlast   ;
-(* mark_debug = "true" *) wire arp_reply_valid;
-(* mark_debug = "true" *) reg [15:0]  gen_beat;
-(* mark_debug = "true" *) reg    [47:0]  dst_mac_addr;
-
+//(* mark_debug = "true" *) wire arp_reply_valid;
+//(* mark_debug = "true" *) reg [15:0]  gen_beat;
+//(* mark_debug = "true" *) reg    [47:0]  dst_mac_addr;
+//(* mark_debug = "true" *)    wire data_p;
 // LED Indicators 
 reg [31:0] cnt_300M = 32'd0;
 always @(posedge sys_clk_300Mhz) begin
@@ -743,7 +753,8 @@ reg [31:0] cnt_156_25M = 32'd0;
 always @(posedge gt_refclk_out) begin
     cnt_156_25M <= cnt_156_25M + 1;
 end
-assign led[1] = cnt_156_25M[26];
+//assign led[1] = cnt_156_25M[26];
+assign led[1] = dbg_led[0];
 
 
 // LED Indicators 
@@ -751,9 +762,9 @@ reg [31:0] cnt_100M = 32'd0;
 always @(posedge sys_clk_100MHz) begin
     cnt_100M <= cnt_100M + 1;
 end
-assign led[2] = cnt_100M[26];
+//assign led[2] = cnt_100M[26];
 // assign led[2] = mmcm_locked;
-
+assign led[2] = dbg_led[1];
 
 
 reg [31:0] cnt_tx_clk_out = 32'd0;
