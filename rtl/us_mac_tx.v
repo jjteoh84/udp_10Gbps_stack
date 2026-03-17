@@ -214,6 +214,18 @@ reg     [10:0]   mac_state       =   0;
 reg     [10:0]   mac_next_state  =   0;
 
 reg signed [15:0] pad_counter;
+reg [15:0] stashed_data;
+
+always @(posedge tx_axis_aclk) begin
+    if (~tx_axis_aresetn) begin
+        stashed_data <= 16'b0;
+    end
+    else if (mac_state == MAC_FRAME_HEADER1 || mac_state == MAC_FRAME_PAYLOAD) begin
+        if (~mac_send_almost_full) begin
+            stashed_data <= {frame_tx_data[63:56], frame_tx_data[55:48]};
+        end
+    end
+end
 
 always @(posedge tx_axis_aclk) begin
     if(~tx_axis_aresetn)begin
@@ -350,14 +362,21 @@ always @(posedge tx_axis_aclk) begin
     if (~tx_axis_aresetn) begin
         mac_send_wren  <=  0;
     end
-    else if (mac_state == MAC_FRAME_HEADER0 || mac_state == MAC_FRAME_HEADER1 
-          || mac_state == MAC_FRAME_PAYLOAD || mac_state == MAC_FRAME_PADDING0
-          || mac_state == MAC_FRAME_LAST    || mac_state == MAC_FRAME_PADDING1
-          || mac_state == MAC_FRAME_PADDING2) begin
-        mac_send_wren  <= 1;
+    else if (~mac_send_almost_full) begin
+        if (mac_state == MAC_FRAME_HEADER0 || mac_state == MAC_FRAME_HEADER1 
+              || mac_state == MAC_FRAME_PAYLOAD || mac_state == MAC_FRAME_PADDING0
+              || mac_state == MAC_FRAME_LAST    || mac_state == MAC_FRAME_PADDING1
+              || mac_state == MAC_FRAME_PADDING2) begin
+            mac_send_wren  <= 1;
+        end
+        else begin
+            mac_send_wren  <= 0;
+        end
     end
     else begin
-        mac_send_wren  <= 0;
+        // Stall: Keep wren low once the word that caused the stall is written,
+        // or just keep it low to prevent duplicate.
+        mac_send_wren <= 0;
     end
 end
 
@@ -431,8 +450,8 @@ always @(posedge tx_axis_aclk) begin
                     mac_send_wdata[73]    <= 0;                                    
                 end
                 else begin
-                    if(frame_tx_keep[5:0] == 6'b00) begin //if current frame is last frame and the MSB 6 bytes are zero
-                        mac_send_wdata[7:0]   <= {6'b111111, frame_tx_keep[7:6]};   // current frame (2 bytes) + previous frame (6 bytes) //NOTE: potential bug, previous frame tkeep wasn't taken into account.
+                    if(frame_tx_keep[7:2] == 6'b00) begin //if current frame is last frame and the MSB 6 bytes are zero
+                        mac_send_wdata[7:0]   <= {6'b111111, frame_tx_keep[1:0]};   // current frame (2 bytes) + previous frame (6 bytes) //NOTE: potential bug, previous frame tkeep wasn't taken into account.
                         mac_send_wdata[73]    <= 1;              
                     end
                     else begin
@@ -447,8 +466,8 @@ always @(posedge tx_axis_aclk) begin
                 mac_send_wdata[73]    <= 0;    
             end 
 
-            mac_send_wdata[15:8]  <= frame_tx_keep[6] ? frame_tx_data[55:48]  : 8'b0;           
-            mac_send_wdata[23:16] <= frame_tx_keep[7] ? frame_tx_data[63:56] : 8'b0;
+            mac_send_wdata[15:8]  <= frame_tx_keep[0] ? frame_tx_data[55:48]  : 8'b0;           
+            mac_send_wdata[23:16] <= frame_tx_keep[1] ? frame_tx_data[63:56] : 8'b0;
             mac_send_wdata[31:24] <= frame_tx_data_reg[7:0]; 
             mac_send_wdata[39:32] <= frame_tx_data_reg[15:8];
             mac_send_wdata[47:40] <= frame_tx_data_reg[23:16];
@@ -470,8 +489,8 @@ always @(posedge tx_axis_aclk) begin
                 mac_send_wdata[72]    <= 1; //valid
                 mac_send_wdata[73]    <= 0; //last                    
             end
-            mac_send_wdata[15:8]  <= 8'h00;           
-            mac_send_wdata[23:16] <= 8'h00;
+            mac_send_wdata[15:8]  <= stashed_data[7:0];           
+            mac_send_wdata[23:16] <= stashed_data[15:8];
             mac_send_wdata[31:24] <= frame_tx_data_reg[7:0];
             mac_send_wdata[39:32] <= frame_tx_data_reg[15:8];
             mac_send_wdata[47:40] <= frame_tx_data_reg[23:16];
@@ -646,20 +665,20 @@ end
 
 
 
-(* mark_debug = "true" *) wire    [63:0]  frame_tx_axis_tdata;
-(* mark_debug = "true" *) wire  frame_tx_axis_tvalid;
-(* mark_debug = "true" *) wire frame_tx_axis_tlast;
-(* mark_debug = "true" *) wire [7:0] frame_tx_axis_tkeep;
-(* mark_debug = "true" *) wire    [63:0]  frame_tx_data;
-(* mark_debug = "true" *) wire  frame_tx_valid;
-(* mark_debug = "true" *) wire frame_tx_tlast;
-(* mark_debug = "true" *) wire [7:0] frame_tx_keep;
-(* mark_debug = "true" *) reg [15:0]  frame_length;
-(* mark_debug = "true" *) reg     [10:0]   mac_state;
-(* mark_debug = "true" *) reg     [1:0]   mac_send_state ;
-(* mark_debug = "true" *) reg stream_data_rden;
-(* mark_debug = "true" *) reg signed [15:0] pad_counter;
-(* mark_debug = "true" *) reg    [15:0] frame_type;
-(* mark_debug = "true" *) reg  mac_send_rden;
-(* mark_debug = "true" *) reg  mac_send_wren;
+//(* mark_debug = "true" *) wire    [63:0]  frame_tx_axis_tdata;
+//(* mark_debug = "true" *) wire  frame_tx_axis_tvalid;
+//(* mark_debug = "true" *) wire frame_tx_axis_tlast;
+//(* mark_debug = "true" *) wire [7:0] frame_tx_axis_tkeep;
+//(* mark_debug = "true" *) wire    [63:0]  frame_tx_data;
+//(* mark_debug = "true" *) wire  frame_tx_valid;
+//(* mark_debug = "true" *) wire frame_tx_tlast;
+//(* mark_debug = "true" *) wire [7:0] frame_tx_keep;
+//(* mark_debug = "true" *) reg [15:0]  frame_length;
+//(* mark_debug = "true" *) reg     [10:0]   mac_state;
+//(* mark_debug = "true" *) reg     [1:0]   mac_send_state ;
+//(* mark_debug = "true" *) reg stream_data_rden;
+//(* mark_debug = "true" *) reg signed [15:0] pad_counter;
+//(* mark_debug = "true" *) reg    [15:0] frame_type;
+//(* mark_debug = "true" *) reg  mac_send_rden;
+//(* mark_debug = "true" *) reg  mac_send_wren;
 endmodule

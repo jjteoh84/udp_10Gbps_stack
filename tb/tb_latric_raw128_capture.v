@@ -1,5 +1,6 @@
 `timescale 1ns / 1ps
 `default_nettype none
+`define SIMULATION
 
 module tb_latric_raw128_capture;
 
@@ -21,9 +22,10 @@ module tb_latric_raw128_capture;
     reg         m_axis_tready = 1;
     reg         sys_reset = 1;
     reg         ref_clk_300 = 0;
-    reg         re_train = 0;
-    reg        training_done;
-    wire [4:0]  center_tap;
+    // reg         re_train = 0; // Not present in latest RTL
+    wire        training_done;
+    wire [8:0]  center_tap;
+    wire [2:0]  led;
 
      // ===================================================================
     // Instantiate DUT
@@ -42,7 +44,8 @@ module tb_latric_raw128_capture;
         .m_axis_tready  (m_axis_tready),
         .sys_reset      (sys_reset),
         .center_tap     (center_tap),
-        .training_done  (training_done)
+        .training_done  (training_done),
+        .led            (led)
     );
 
     // Clocks
@@ -153,7 +156,7 @@ module tb_latric_raw128_capture;
             // end
             
             // Wait for training to complete (after the reset above)
-            verify_training(500);
+            verify_training(20000);
             if (training_done) begin
                 // Send actual test packets now that training is done
                 $display("Tranining is done. Now sending burst for misalignment: %0d", misalign);
@@ -232,35 +235,25 @@ module tb_latric_raw128_capture;
 
     integer beat_cnt = 0;
     always @(posedge tx_axis_aclk) begin
-      if (m_axis_tvalid && m_axis_tready) begin
-        if (beat_cnt == 0) begin
-          received_packet[127:64] = m_axis_tdata;
-          $display(
-              "%t: Beat %0d: 0x%016x %s", $time, beat_cnt, m_axis_tdata,
-              m_axis_tlast ? "(tlast)" : "");
-          beat_cnt = beat_cnt + 1;
-        end else begin
-          received_packet[63:0] = m_axis_tdata;
-          $display(
-              "%t: Beat %0d: 0x%016x %s", $time, beat_cnt, m_axis_tdata,
-              m_axis_tlast ? "(tlast)" : "");
-          beat_cnt = 0;
+        if (!tx_axis_aresetn) begin
+            beat_cnt = 0;
+        end else if (m_axis_tvalid && m_axis_tready) begin
+            if (m_axis_tlast) begin
+                received_packet[63:0] = m_axis_tdata;
+                $display("%t: Beat 1: 0x%016x (tlast)", $time, m_axis_tdata);
+                check_packet;
+                beat_cnt = 0;
+            end else begin
+                received_packet[127:64] = m_axis_tdata;
+                $display("%t: Beat 0: 0x%016x", $time, m_axis_tdata);
+                beat_cnt = 1;
+            end
         end
-
-        if (m_axis_tlast) begin
-          check_packet;
-        end
-      end
-//      else begin
-//        if (!training_done) begin
-//          $display("Still Training");
-//            end
-//        end
-     end
+    end
 
     // Timeout
     initial begin
-        #10_000_000;
+        #100_000_000; // 100 ms
         $display("ERROR: Simulation timeout");
         $finish;
     end

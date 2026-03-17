@@ -1,14 +1,10 @@
 `timescale 1ns / 1ps
 `default_nettype none
+`define SIMULATION  //remove if not simulating
 
-// This module incorporates:
-// - Proper fabric bitslip for word alignment
-// - Settle counter for stable pattern detection
-// - Correct handling of 17-bit odd-length header
-// - Safe async CDC via XPM_FIFO_ASYNC (128-bit write → 64-bit read)
-// - Proper reset/initialization (no inline inits)
-// - IDELAYCTRL calibration
-// - Verified via cycle-accurate Python simulation (alignment, packet extraction, CDC order)
+
+
+// If delay tuning doesn't work, other option is just use falling edge of the 720 MHz clock.
 
 module latric_raw128_capture (
     input  wire        clk720_p,
@@ -286,15 +282,16 @@ module latric_raw128_capture (
     // ===================================================================
     // Fabric bitslip and alignment logic (90 MHz domain)
     // ===================================================================
-
     
 `ifdef SIMULATION
     localparam [15:0] TAP_OBSERVE_PERIOD = 16'd256; // Increased to capture >3 packets (272 cycles each)
     localparam [9:0]  STARTUP_WAIT       = 10'd64;
+    localparam [9:0] MAX_TRAIN_TAPS = 10'd10;
     localparam [9:0]  MATCH_THRESH       = 10'd3;   // Lower threshold for short window
 `else
     localparam [15:0] TAP_OBSERVE_PERIOD = 16'd30000;
     localparam [9:0]  STARTUP_WAIT       = 10'd511;
+    localparam [9:0] MAX_TRAIN_TAPS = 10'd512;
     localparam [9:0]  MATCH_THRESH       = 10'd5;  // Tune: Matches per observation period
 `endif
     localparam [16:0] HEADER_PATTERN     = 17'b10101010101010101;
@@ -405,14 +402,16 @@ always_ff @(posedge clk_90m) begin
                 settle        <= 4'd15;      // Prevent early checks
                 grace_cnt     <= 4'd0;
             end 
+
+
             else if (!training_done && !vio_force_training_done) begin
                 // ────────────────────────────────────
-                // Training phase: Sweep taps 0-511
+                // Training phase: Sweep taps 0...MAX_TRAIN_TAPS
                 // ────────────────────────────────────
-                if (current_tap <= 10'd512) begin
+                if (current_tap <= MAX_TRAIN_TAPS) begin
                     if (observe_cnt == 16'd0) begin
                         // Start new tap: auto_load and reset align logic
-                        if (current_tap < 10'd512) begin
+                        if (current_tap < MAX_TRAIN_TAPS) begin
                             auto_delay_tap   <= current_tap[8:0];
                             auto_load        <= 1'b1;
                             observe_cnt      <= TAP_OBSERVE_PERIOD;
@@ -490,7 +489,7 @@ always_ff @(posedge clk_90m) begin
 
                         // End of observation for this tap
                         if (observe_cnt == 16'd1) begin  
-                            if (current_tap < 10'd512) begin
+                            if (current_tap < MAX_TRAIN_TAPS) begin
                                 if (match_cnt >= MATCH_THRESH) begin
                                     if (current_tap[8:0] < min_pass_tap) min_pass_tap <= current_tap[8:0];
                                     if (current_tap[8:0] > max_pass_tap) max_pass_tap <= current_tap[8:0];
@@ -558,13 +557,11 @@ always_ff @(posedge clk_90m) begin
     // ===================================================================
     // Async FIFO: 128-bit packet → 64-bit AXI-Stream (CDC 90 MHz → 156.25 MHz)
     // ===================================================================
-    // Packet is [Header...Payload]. Header is at MSB [127].
-    // We want Header in the first beat. FIFO reads LSB first? 
-    // If FIFO reads [63:0] first, we must put Header in [63:0].
-    wire [127:0] fifo_din = {packet_reg[63:0], packet_reg[127:64]}; 
+
+    wire [127:0] fifo_din = packet_reg; 
     wire        fifo_wr_en;
     wire        fifo_full;
-    wire [63:0] fifo_dout;
+    wire [127:0] fifo_dout;
     wire        fifo_rd_en;
     wire        fifo_empty;
     wire        wr_rst_busy;
@@ -576,10 +573,10 @@ always_ff @(posedge clk_90m) begin
         .FIFO_MEMORY_TYPE    ("auto"),
         .FIFO_WRITE_DEPTH    (64),
         .WRITE_DATA_WIDTH    (128),
-        .READ_DATA_WIDTH     (64),
+        .READ_DATA_WIDTH     (128),     // Changed to symmetric 128-bit completely avoiding XPM FWFT asymmetry logic
         .READ_MODE           ("fwft"),
         .FIFO_READ_LATENCY   (0),
-        .USE_ADV_FEATURES    ("0000"),   // No advanced features needed
+        .USE_ADV_FEATURES    ("1000"),
         .WAKEUP_TIME         (0)
     ) fifo_inst (
         .rst         (sys_reset),
@@ -598,21 +595,28 @@ always_ff @(posedge clk_90m) begin
     // ===================================================================
     // Read-side FSM: Output two 64-bit beats per packet, tlast on second
     // ===================================================================
-    reg beat_cnt; // 0 = First beat, 1 = Second beat (Last)
-
-    assign fifo_rd_en   = !fifo_empty && m_axis_tready && !rd_rst_busy;
-    assign m_axis_tdata = fifo_dout;
-    assign m_axis_tkeep = 8'hFF;
-    assign m_axis_tvalid = !fifo_empty;
-    assign m_axis_tlast = beat_cnt;
+    reg beat_cnt      = 1'b0;
 
     always @(posedge tx_axis_aclk) begin
-        if (!tx_axis_aresetn) begin
+        if (!tx_axis_aresetn || rd_rst_busy) begin
             beat_cnt <= 1'b0;
-        end else if (fifo_rd_en) begin
+        end
+        else if (m_axis_tvalid && m_axis_tready) begin
+            // Advance beat count on every successful handshake
             beat_cnt <= ~beat_cnt;
         end
     end
+
+    // Only pop after the SECOND beat has been accepted by downstream
+    assign fifo_rd_en   = !fifo_empty && m_axis_tready && !rd_rst_busy && (beat_cnt == 1'b1);
+
+    // Simplified: Direct mapping. First beat gets the upper bits (Header).
+    assign m_axis_tdata = (beat_cnt == 1'b0) ? fifo_dout[127:64] : fifo_dout[63:0];
+    assign m_axis_tkeep = 8'hFF;
+    assign m_axis_tvalid = !fifo_empty && !rd_rst_busy;
+    assign m_axis_tlast = beat_cnt;
+
+    
 
 
 
@@ -658,7 +662,8 @@ always_ff @(posedge clk_90m) begin
     (* MARK_DEBUG = "TRUE" *) wire dbg_clk360 = clk360_buf;
     (* mark_debug = "true" *)    wire dbg_clk90_buf = clk90_buf;
 
-
+    (* mark_debug = "true" *) logic dbg_beat_cnt = beat_cnt;
+    
     // Auto-training signals (from latric_raw128 example)
     (* mark_debug = "true" *) logic dbg_training_done = training_done;
     (* mark_debug = "true" *) logic [8:0] dbg_center_tap = center_tap;

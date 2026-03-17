@@ -85,24 +85,24 @@ wire    [31:0]  ip_recv_src_ip_addr;
 wire    [31:0]  ip2udp_recv_dst_ip_addr;
 wire    [31:0]  ip2udp_recv_src_ip_addr;
 
-(* mark_debug = "true" *) wire [63:0]     mac_rx_axis_tdata;
-(* mark_debug = "true" *) wire mac_rx_axis_tlast;
-(* mark_debug = "true" *) wire    [63:0]  rx_frame_axis_tdata;
-(* mark_debug = "true" *) wire rx_frame_axis_tlast;
-(* mark_debug = "true" *) wire    [63:0]  mac2ip_rx_axis_tdata;
-(* mark_debug = "true" *) wire    [63:0] ip2app_axis_tdata;
-(* mark_debug = "true" *) wire    [63:0] ip2udp_axis_tdata;
-(* mark_debug = "true" *) wire    [15:0] ip_type;
-(* mark_debug = "true" *) wire    [47:0]  frame_dst_mac_addr;
-(* mark_debug = "true" *) wire    [31:0]  ip_recv_dst_ip_addr;
-(* mark_debug = "true" *) wire    [31:0]  ip_recv_src_ip_addr;
-(* mark_debug = "true" *) wire    [47:0]  recv_dst_mac_addr;
-(* mark_debug = "true" *) wire    [47:0]  recv_src_mac_addr;
-(* mark_debug = "true" *) wire    [15:0]  recv_type;
-(* mark_debug = "true" *) wire [63:0]     udp_rx_axis_tdata   ;
-(* mark_debug = "true" *) wire [7:0]     	udp_rx_axis_tkeep   ;
-(* mark_debug = "true" *) wire            udp_rx_axis_tvalid  ; 		 
-(* mark_debug = "true" *) wire            udp_rx_axis_tlast   ;
+// (* mark_debug = "true" *) wire [63:0]     mac_rx_axis_tdata;
+// (* mark_debug = "true" *) wire mac_rx_axis_tlast;
+// (* mark_debug = "true" *) wire    [63:0]  rx_frame_axis_tdata;
+// (* mark_debug = "true" *) wire rx_frame_axis_tlast;
+// (* mark_debug = "true" *) wire    [63:0]  mac2ip_rx_axis_tdata;
+// (* mark_debug = "true" *) wire    [63:0] ip2app_axis_tdata;
+// // (* mark_debug = "true" *) wire    [63:0] ip2udp_axis_tdata;
+// (* mark_debug = "true" *) wire    [15:0] ip_type;
+// (* mark_debug = "true" *) wire    [47:0]  frame_dst_mac_addr;
+// (* mark_debug = "true" *) wire    [31:0]  ip_recv_dst_ip_addr;
+// (* mark_debug = "true" *) wire    [31:0]  ip_recv_src_ip_addr;
+// (* mark_debug = "true" *) wire    [47:0]  recv_dst_mac_addr;
+// (* mark_debug = "true" *) wire    [47:0]  recv_src_mac_addr;
+// (* mark_debug = "true" *) wire    [15:0]  recv_type;
+// (* mark_debug = "true" *) wire [63:0]     udp_rx_axis_tdata   ;
+// (* mark_debug = "true" *) wire [7:0]     	udp_rx_axis_tkeep   ;
+// (* mark_debug = "true" *) wire            udp_rx_axis_tvalid  ; 		 
+// (* mark_debug = "true" *) wire            udp_rx_axis_tlast   ;
 
 // ------------------------------------------------------------------
 // Instantiations

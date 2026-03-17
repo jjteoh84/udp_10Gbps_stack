@@ -808,14 +808,14 @@ always @(*) begin
 end
 
 
-(* mark_debug = "true" *) reg 		[5:0]  frame_state;
-(* mark_debug = "true" *) wire  ip_send_empty;
-(* mark_debug = "true" *) reg 	[7:0] ip_send_next_state;
-(* mark_debug = "true" *) reg 	[7:0] ip_send_state;
-(* mark_debug = "true" *) wire	[63:0]	ip_axis_tdata;
-(* mark_debug = "true" *) wire			ip_axis_tlast;
-(* mark_debug = "true" *) wire			ip_axis_tvalid;
-(* mark_debug = "true" *) wire	[7:0]	ip_axis_tkeep;
-(* mark_debug = "true" *) reg				ip_send_wren;
-(* mark_debug = "true" *) reg				ip_send_rden;
+//(* mark_debug = "true" *) reg 		[5:0]  frame_state;
+//(* mark_debug = "true" *) wire  ip_send_empty;
+//(* mark_debug = "true" *) reg 	[7:0] ip_send_next_state;
+//(* mark_debug = "true" *) reg 	[7:0] ip_send_state;
+//(* mark_debug = "true" *) wire	[63:0]	ip_axis_tdata;
+//(* mark_debug = "true" *) wire			ip_axis_tlast;
+//(* mark_debug = "true" *) wire			ip_axis_tvalid;
+//(* mark_debug = "true" *) wire	[7:0]	ip_axis_tkeep;
+//(* mark_debug = "true" *) reg				ip_send_wren;
+//(* mark_debug = "true" *) reg				ip_send_rden;
 endmodule
